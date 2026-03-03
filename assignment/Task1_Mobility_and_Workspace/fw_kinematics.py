@@ -31,22 +31,22 @@ def plot_workspace(x, y, z):
 def main():
 
     robot = RobotKinematics()
-    symbolic_xyz = robot._symbolic_xyz_pos
+    symbolic_EE_pose = robot._symbolic_EE_pose
 
     # Output the symbolic matrix to see the math
-    print("Symbolic Translation Vector (X, Y, Z):")
-    sp.pprint(symbolic_xyz)
+    print("Symbolic Forward Kinematics Pose Matrix:")
+    sp.pprint(symbolic_EE_pose)
 
-    """ 
+    
     # Savve equations to a file. Uncomment if needed
     with open("robot_fw_kinematics.txt", "w", encoding="utf-8") as f:
-        fw_kinematics_equation = sp.pretty(symbolic_xyz, use_unicode=False, wrap_line=False)
+        fw_kinematics_equation = sp.pretty(symbolic_EE_pose, use_unicode=False, wrap_line=False)
 
-        f.write("FORWARD KINEMATICS SYMBOLIC EQUATIONS (X, Y, Z)\n\n")
+        f.write("FORWARD KINEMATICS SYMBOLIC EQUATIONS (X, Y, Z, Pitch, Roll)\n\n")
         f.write(fw_kinematics_equation)
 
     print("\n[System] Symbolic equations have been saved to 'robot_fw_kinematics.txt'")
-    """
+    
 
     # Calculate and plot
     x_pts, y_pts, z_pts = robot.compute_workspace()

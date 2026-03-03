@@ -25,7 +25,7 @@ def main():
     ]
 
     for target in EE_pose_targets:
-        solutions = robot.inverse_kinematics(target)
+        solutions = robot.trial_inverse_kinematics(target)
 
         if not solutions:
             res_str = "No solution found"

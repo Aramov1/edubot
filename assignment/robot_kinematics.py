@@ -6,8 +6,9 @@ from scipy.optimize import minimize
 class RobotKinematics():
     def __init__(self):
         # Define robot configuration parameters as symbolic variables
+        self.joint_keys = ['t1', 't2', 't3', 't4', 't5']
         self.t1, self.t2, self.t3, self.t4, self.t5 = sp.symbols('theta_1 theta_2 theta_3 theta_4 theta_5')
-        self.joint_vars = (self.t1, self.t2, self.t3, self.t4, self.t5)
+        self.joint_vars = [self.t1, self.t2, self.t3, self.t4, self.t5]
 
         # Define joint limits (in radians)
         self.joint_bounds = {
@@ -20,7 +21,6 @@ class RobotKinematics():
 
         # Build Symbolic forward kinematics model
         self._symbolic_FK_model = self._build_symbolic_model()
-        #self._symbolic_IK_model = self._symbolic_FK_model.inv()
         
         # Extract EE position and orienteation
         self._symbolic_xyz_pos = self._symbolic_FK_model[:3, 3]
@@ -29,17 +29,20 @@ class RobotKinematics():
         self._symbolic_pitch_roll = [sp.asin(-r20), sp.atan2(r21, r22)] # Standard Y-X convention for a 5-DOF arm: Pitch = arcsin(-R[2,0]), Roll = atan2(R[2,1], R[2,2])
 
         # Combine  EE pose into a 5-element output vector: [x, y, z, pitch, roll]
-        self.fk_pose_expr = sp.Matrix([*self._symbolic_xyz_pos, *self._symbolic_pitch_roll])
+        self._symbolic_EE_pose = sp.Matrix([*self._symbolic_xyz_pos, *self._symbolic_pitch_roll])
 
-        # Build numerical forward kinematics model
-        self._numeric_FK_model = lambdify(args = [self.joint_vars], expr = self.fk_pose_expr, modules='numpy')
-    
+        # Build Numerical forward kinematics model
+        self._numeric_FK_model = lambdify(args = self.joint_vars, expr = self._symbolic_EE_pose, modules='numpy')
 
-        """
-        xyz_pos= [self._symbolic_FK_model[i, 3] for i in range(3)]
-        self._xyz_position_func = lambdify((self.t1, self.t2, self.t3, self.t4, self.t5),
-                                  xyz_pos, modules='numpy')
-        """
+        # Build Symbolic Inverse Kinematics model: Jacobian J = d(EE_pose)/d(joint_vars)
+        # J is a 5x5 matrix where J[i,j] = d(EE_pose[i])/d(joint_vars[j])
+        # IK update rule: delta_q = J^+ * delta_EE  (J^+ = pseudo-inverse of J)
+        self._symbolic_IK_model = self._symbolic_EE_pose.jacobian(sp.Matrix(self.joint_vars))
+
+        # Numerical Jacobian for use in IK solvers
+        self._numeric_IK_model = lambdify(args = self.joint_vars, expr = self._symbolic_IK_model, modules='numpy')
+
+
     def _sym_rot_x(self, theta):
         return sp.Matrix([[1,  0,              0,             0],
                           [0,  sp.cos(theta), -sp.sin(theta), 0],
@@ -48,7 +51,7 @@ class RobotKinematics():
     
     def _sym_rot_y(self, theta):
         return sp.Matrix([[sp.cos(theta),  0, sp.sin(theta), 0],
-                          [0,              1, 0,             0],
+                          [0,             1, 0,             0],
                           [-sp.sin(theta), 0, sp.cos(theta), 0],
                           [0,              0, 0,             1]])
 
@@ -96,17 +99,14 @@ class RobotKinematics():
         If joint paramenters are within limits, returns the EE position as a 3D vector.
         Otherwise, raises ValueError.
         """ 
-
-        joints = [q1, q2, q3, q4, q5]
-        keys = ['t1', 't2', 't3', 't4', 't5']
-
-        for i, q in enumerate(joints):
-            low, high = self.joint_bounds[keys[i]]
+        
+        for i, q in enumerate([q1, q2, q3, q4, q5]):
+            low, high = self.joint_bounds[self.joint_keys[i]]
             
             # Use np.any to handle both single floats and arrays from meshgrid
             if np.any(q < low) or np.any(q > high):
                 raise ValueError(
-                    f"Joint {keys[i]} is out of bounds! "
+                    f"Joint {self.joint_keys[i]} is out of bounds! "
                     f"Input: {q}, Allowed Range: [{low}, {high}]"
                 )
             
@@ -124,7 +124,7 @@ class RobotKinematics():
         def objective_function(q):
             current_pose = np.array(self._numeric_FK_model(q)).flatten()
             weights = np.array([10.0, 10.0, 10.0, 1.0, 1.0])
-            return np.sum(((current_pose - np.array(target_pose)) * weights) ** 2)
+            return np.sum(((current_pose - np.array(target_pose))) ** 2 *)
 
         bounds = list(self.joint_bounds.values())
 
@@ -163,7 +163,7 @@ class RobotKinematics():
 
     def compute_workspace(self):
         """Computes the xyz coordinates for a range of joint angles."""
-        resolution = 12  # Number of points per joint
+        resolution = 30  # Number of points per joint
         
         t1_space = np.linspace(*self.joint_bounds['t1'], resolution)
         t2_space = np.linspace(*self.joint_bounds['t2'], resolution)
