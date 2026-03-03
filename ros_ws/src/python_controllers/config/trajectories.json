@@ -1,0 +1,71 @@
+{
+  "_comment": "Set 'active_trajectory' to the ID of the trajectory you want the robot to follow.",
+  "active_trajectory": "circle_yz",
+
+  "trajectories": {
+
+    "circle_yz": {
+      "description": "Circle in the Y-Z plane at x=0.12 m. Center y=0, z=0.18 m, radius=0.05 m. 12 evenly-spaced waypoints.",
+      "loop": true,
+      "position_threshold": 0.015,
+      "orientation": { "pitch": 0.0, "roll": 0.0 },
+      "waypoints": [
+        { "x": 0.12, "y":  0.0500, "z": 0.1800 },
+        { "x": 0.12, "y":  0.0433, "z": 0.2050 },
+        { "x": 0.12, "y":  0.0250, "z": 0.2233 },
+        { "x": 0.12, "y":  0.0000, "z": 0.2300 },
+        { "x": 0.12, "y": -0.0250, "z": 0.2233 },
+        { "x": 0.12, "y": -0.0433, "z": 0.2050 },
+        { "x": 0.12, "y": -0.0500, "z": 0.1800 },
+        { "x": 0.12, "y": -0.0433, "z": 0.1550 },
+        { "x": 0.12, "y": -0.0250, "z": 0.1367 },
+        { "x": 0.12, "y":  0.0000, "z": 0.1300 },
+        { "x": 0.12, "y":  0.0250, "z": 0.1367 },
+        { "x": 0.12, "y":  0.0433, "z": 0.1550 }
+      ]
+    },
+
+    "square_yz": {
+      "description": "Square in the Y-Z plane at x=0.12 m. Center y=0, z=0.18 m, half-side=0.04 m. Traversed counter-clockwise.",
+      "loop": true,
+      "position_threshold": 0.015,
+      "orientation": { "pitch": 0.0, "roll": 0.0 },
+      "waypoints": [
+        { "x": 0.12, "y":  0.0400, "z": 0.1400 },
+        { "x": 0.12, "y":  0.0400, "z": 0.1600 },
+        { "x": 0.12, "y":  0.0400, "z": 0.1800 },
+        { "x": 0.12, "y":  0.0400, "z": 0.2000 },
+        { "x": 0.12, "y":  0.0400, "z": 0.2200 },
+        { "x": 0.12, "y":  0.0200, "z": 0.2200 },
+        { "x": 0.12, "y":  0.0000, "z": 0.2200 },
+        { "x": 0.12, "y": -0.0200, "z": 0.2200 },
+        { "x": 0.12, "y": -0.0400, "z": 0.2200 },
+        { "x": 0.12, "y": -0.0400, "z": 0.2000 },
+        { "x": 0.12, "y": -0.0400, "z": 0.1800 },
+        { "x": 0.12, "y": -0.0400, "z": 0.1600 },
+        { "x": 0.12, "y": -0.0400, "z": 0.1400 },
+        { "x": 0.12, "y": -0.0200, "z": 0.1400 },
+        { "x": 0.12, "y":  0.0000, "z": 0.1400 },
+        { "x": 0.12, "y":  0.0200, "z": 0.1400 }
+      ]
+    },
+
+    "line_z": {
+      "description": "Vertical line at x=0.12 m, y=0. End-effector moves up from z=0.13 m to z=0.23 m and back. loop=true makes it oscillate.",
+      "loop": true,
+      "position_threshold": 0.015,
+      "orientation": { "pitch": 0.0, "roll": 0.0 },
+      "waypoints": [
+        { "x": 0.12, "y": 0.0, "z": 0.1300 },
+        { "x": 0.12, "y": 0.0, "z": 0.1550 },
+        { "x": 0.12, "y": 0.0, "z": 0.1800 },
+        { "x": 0.12, "y": 0.0, "z": 0.2050 },
+        { "x": 0.12, "y": 0.0, "z": 0.2300 },
+        { "x": 0.12, "y": 0.0, "z": 0.2050 },
+        { "x": 0.12, "y": 0.0, "z": 0.1800 },
+        { "x": 0.12, "y": 0.0, "z": 0.1550 }
+      ]
+    }
+
+  }
+}

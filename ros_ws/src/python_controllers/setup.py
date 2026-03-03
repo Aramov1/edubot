@@ -10,6 +10,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/config', ['config/trajectories.json']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -22,6 +23,9 @@ setup(
         'console_scripts': [
             'example_pos_traj = python_controllers.example_pos_traj:main',
             'example_vel_traj = python_controllers.example_vel_traj:main',
+            'set_joint_position = python_controllers.set_joint_position:main',
+            'read_ee_pose = python_controllers.read_ee_pose:main',
+            'trajectory_follower = python_controllers.trajectory_follower:main',
         ],
     },
 )
