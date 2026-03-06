@@ -98,7 +98,7 @@ class RobotKinematics():
         T_upperarm_lowerarm = self._sym_trans(0.11257, -0.028, 0) * self._sym_rot_z(self.t3) 
         
         # TO: Lowerarm  --- FROM: Wrist (Rotation t4)
-        T_lowerarm_wrist = self._sym_trans(0.0052, -0.1349, 0) * self._sym_rot_y(sp.pi/2) * self._sym_rot_z(self.t4)
+        T_lowerarm_wrist = self._sym_trans(0.0052, -0.1349, 0) * self._sym_rot_z(sp.pi/2) * self._sym_rot_z(self.t4)
         
         # TO: Wrist     --- FROM: Gripper
         T_wrist_gripper = self._sym_trans(-0.0601, 0, 0) * self._sym_rot_y(-sp.pi/2) * self._sym_rot_z(self.t5) 
@@ -114,7 +114,7 @@ class RobotKinematics():
         If joint paramenters are within limits, returns the EE position as a 3D vector.
         Otherwise, raises ValueError.
         """ 
-        """
+        
         for i, q in enumerate([q1, q2, q3, q4, q5]):
             low, high = self.joint_bounds[self.joint_keys[i]]
             
@@ -124,7 +124,7 @@ class RobotKinematics():
                     f"Joint {self.joint_keys[i]} is out of bounds! "
                     f"Input: {q}, Allowed Range: [{low}, {high}]"
                 )
-        """    
+            
         # Return the computed forward kinematics matrix if joint values within limits
         return self._numeric_EE_pose(q1, q2, q3, q4, q5)
 
@@ -165,7 +165,7 @@ class RobotKinematics():
         return target_joint_velocities, is_singular
 
     
-    def inverse_kinematics(self, target_pose, initial_guess = [0, 0, 0, 0, 0], n_restarts=50, error_threshold=1e-3, dedup_tol=0.05):
+    def inverse_kinematics(self, target_pose, initial_guess = [0, 0, 0, 0, 0], n_restarts=50, error_threshold=1e-2, dedup_tol=0.05):
         """
         Solves IK for [x, y, z, pitch, roll] using constrained optimization (SLSQP).
         Returns a list of all distinct joint configurations that reach the target pose.
@@ -214,7 +214,7 @@ class RobotKinematics():
 
     def compute_workspace(self):
         """Computes the xyz coordinates for a range of joint angles."""
-        resolution = 10  # Number of points per joint
+        resolution = 17  # Number of points per joint
         
         t1_space = np.linspace(*self.joint_bounds['t1'], resolution)
         t2_space = np.linspace(*self.joint_bounds['t2'], resolution)

@@ -38,8 +38,14 @@ def main():
     sp.pprint(symbolic_EE_pose)
 
 
-
+    desired_pose = [0.335, -0.636, 0.692, 0.942, -2.055] # Example target pose (x, y, z, pitch, roll)
+    solution = robot.forward_kinematics(*desired_pose)
+    print(solution)
     
+
+
+
+    """
     # Savve equations to a file. Uncomment if needed
     with open("robot_fw_kinematics.txt", "w", encoding="utf-8") as f:
         fw_kinematics_equation = sp.pretty(symbolic_EE_pose, use_unicode=False, wrap_line=False)
@@ -56,7 +62,7 @@ def main():
         f.write(fw_kinematics_equation)
 
     print("\n[System] Symbolic equations have been saved to 'jacobian_fw_kinematics.txt'")
-    
+    """
 """
     # Calculate and plot
     x_pts, y_pts, z_pts = robot.compute_workspace()
