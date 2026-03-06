@@ -60,6 +60,11 @@ Make sure the additional ros libraries are installed
         # Install python pkg dependency (global)
         sudo apt-get install python-catkin_pkg
 
+If your installation complains about GPG keys, run:
+```
+sudo rm /etc/apt/sources.list.d/ros2.sources
+```
+
 #### For both 22.04 and 24.04
 
 The required `boost` libraries are installed via
@@ -99,17 +104,37 @@ Once the package is compiled, source by calling:
       # Source the local setup
       source install/setup.bash
 
-You can run start the simulation or the driver for the robot with the following commands
+You can run start the simulation or the driver for the robot with the following commands.
 
- Command                            |  Effect 
-------------------------------------|---------------------------------------------------
-`ros2 launch lerobot sim_position.launch.py`  |  Launches the simulation and `rviz` visualization with the robot in position control mode
-`ros2 launch lerobot sim_velocity.launch.py`  |  Launches the simulation and `rviz` visualization with the robot in velocity control mode
-`ros2 launch lerobot rviz.launch.py` |  Launches the `rviz` visualization and a joint position interface which lets you play with the robot
-`ros2 launch lerobot hw_position.launch.py`  |  Launches the hardware interface with the robot in position control mode
-`ros2 launch lerobot hw_velocity.launch.py`  |  Launches the hardware interface with the robot in velocity control mode
-`ros2 run controllers example_traj` |  Starts the cpp controller that commands a periodic example trajectory
-`ros2 run python_controllers example_traj`  | Starts the python controller that commands a periodic example trajectory
+### Updating
+The packages are continually being updated, so be sure to update every once in a while by calling 
+```
+git submodule update --recursive
+git pull
+```
+
+**Launch files (lerobot package)**
+
+| Command | Effect |
+|---------|--------|
+| `ros2 launch lerobot sim_position.launch.py` | Simulation and RViz in position control mode |
+| `ros2 launch lerobot sim_velocity.launch.py` | Simulation and RViz in velocity control mode |
+| `ros2 launch lerobot rviz.launch.py` | RViz only. **Launch something else** (sim, hw, or joint_slider) in another terminal to see the robot at a real pose. |
+| `ros2 launch lerobot joint_slider.launch.py` | Joint position slider GUI (no RViz) |
+| `ros2 launch lerobot hw_position.launch.py` | Hardware interface in position control mode |
+| `ros2 launch lerobot hw_velocity.launch.py` | Hardware interface in velocity control mode |
+| `ros2 launch lerobot hw_read.launch.py` | Passive read-only: publish joint states, torque disabled (move robot by hand) |
+
+When you launch **RViz only** (`rviz.launch.py`), the robot is shown in the default pose (all joints 0) until another node publishes joint states. To see the robot at a real position, launch one of the following in a **second terminal**: simulation (`sim_position` or `sim_velocity`), hardware (`hw_position`, `hw_velocity`, or `hw_read`), or the joint slider (`joint_slider.launch.py`).
+
+**Running controllers directly (without launch file)**
+
+| Command | Effect |
+|---------|--------|
+| `ros2 run controllers example_pos_traj` | C++ example position mode trajectory controller |
+| `ros2 run controllers example_vel_traj` | C++ example velocity mode trajectory controller |
+| `ros2 run python_controllers example_pos_traj` | Python example trajectory controller |
+| `ros2 run python_controllers example_vel_traj` | Python velocity trajectory controller |
 
 ### For Virtual Machine Users
 
@@ -132,6 +157,16 @@ Log in and log out user account and then try again. Don't forget to source.
 **Important**: If the USB still cannot be read, unplug everything and kill all ROS processes, (1) power the virtual machine, (2) power ON the robot emergency switch, (3) plug in the USB connector, (4) plug in power for motors.
 
 Example implementation can be found [here](https://www.youtube.com/watch?v=h-EOHbVqsJg).
+
+## Troubleshooting
+### BRLTTY
+There is a package that sometimes is installed automatically with Ubuntu called `brltty`, which interferes with servo driver. You can remove it by calling 
+```
+sudo apt purge brltty
+```
+
+### Wrong baud rate or USB port
+In the config (`lerobot\config\robot_hw.yaml`), the USB port name is defined along with the baud rate. You can check which USB port is assigned by calling `ls /dev/ttyUSB*`. This should correspond to the serial port name defined in the yaml file. Rebuild to make config changes take effect.
 
 ## Issues
 
