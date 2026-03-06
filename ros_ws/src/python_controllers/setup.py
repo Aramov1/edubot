@@ -27,6 +27,7 @@ setup(
             'read_ee_pose = python_controllers.read_ee_pose:main',
             'trajectory_follower = python_controllers.trajectory_follower:main',
             'workspace_visualizer = python_controllers.workspace_visualizer:main',
+            'z_vel_controller = python_controllers.z_vel_controller:main',
         ],
     },
 )

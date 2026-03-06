@@ -16,23 +16,37 @@ class RobotKinematics():
             't2': (-np.pi/2, np.pi/2),
             't3': (-np.pi/2, np.pi/2),
             't4': (-np.pi/2, np.pi/2),
-            't5': (-np.pi/2, np.pi/2),
+            't5': (-np.pi, np.pi),
         }
 
-        # Build Symbolic forward kinematics model
-        self._symbolic_FK_model = self._build_symbolic_model()
+        # Build Symbolic Forward Kinematics Transform
+        self._symbolic_FK_transform = self._build_symbolic_transform()
         
-        # Extract EE position and orienteation
-        self._symbolic_xyz_pos = self._symbolic_FK_model[:3, 3]
+        # Extract EE Position
+        self._symbolic_xyz_pos = self._symbolic_FK_transform[:3, 3]
+        self._symbolic_pitch = self.t2 + self.t3 + self.t4  # Approximation: sum of joint angles for pitch
+        self._symbolic_roll = self.t5                                 # Approximation: last joint angle 
 
-        r20, r21, r22 = self._symbolic_FK_model[2, 0], self._symbolic_FK_model[2, 1], self._symbolic_FK_model[2, 2]
-        self._symbolic_pitch_roll = [sp.asin(-r20), sp.atan2(r21, r22)] # Standard Y-X convention for a 5-DOF arm: Pitch = arcsin(-R[2,0]), Roll = atan2(R[2,1], R[2,2])
+        # Extract EE Orienteation - Standard ZYX Euler angles (yaw/pitch/roll) from the rotation matrix
+        """"
+        r00, r10, r20, r21, r22 = self._symbolic_FK_transform[0, 0], self._symbolic_FK_transform[1, 0], self._symbolic_FK_transform[2, 0],  self._symbolic_FK_transform[2, 1],  self._symbolic_FK_transform[2, 2]
+        self._symbolic_pitch = sp.atan2(r20, r00**2 + r10**2)     
+        self._symbolic_roll  = sp.atan2(r21/sp.cos(self._symbolic_pitch), r22/sp.cos(self._symbolic_pitch))
+        """
 
         # Combine  EE pose into a 5-element output vector: [x, y, z, pitch, roll]
-        self._symbolic_EE_pose = sp.Matrix([*self._symbolic_xyz_pos, *self._symbolic_pitch_roll])
+        self._symbolic_EE_pose = sp.Matrix([*self._symbolic_xyz_pos, self._symbolic_pitch,self._symbolic_roll])  # Using the first solution branch for pitch and roll
 
-        # Build Numerical forward kinematics model
-        self._numeric_FK_model = lambdify(args = self.joint_vars, expr = self._symbolic_EE_pose, modules='numpy')
+        # Build Symbolic Jacobian Matrix: J = d(EE_pose)/d(joint_vars)]
+        self._symbolic_jacobian = self._symbolic_EE_pose.jacobian(sp.Matrix(self.joint_vars))
+
+        # Build Numerical Forward kinematics model
+        self._numeric_EE_pose = lambdify(args = self.joint_vars, expr = self._symbolic_EE_pose, modules='numpy')
+
+        # Build Numerical Jacobian
+        self._numeric_jacobian = lambdify(args = self.joint_vars, expr = self._symbolic_jacobian, modules='numpy')
+        
+        """
 
         # Build Symbolic Inverse Kinematics model: Jacobian J = d(EE_pose)/d(joint_vars)
         # J is a 5x5 matrix where J[i,j] = d(EE_pose[i])/d(joint_vars[j])
@@ -42,6 +56,7 @@ class RobotKinematics():
         # Numerical Jacobian for use in IK solvers
         self._numeric_IK_model = lambdify(args = self.joint_vars, expr = self._symbolic_IK_model, modules='numpy')
 
+        """
 
     def _sym_rot_x(self, theta):
         return sp.Matrix([[1,  0,              0,             0],
@@ -67,7 +82,7 @@ class RobotKinematics():
                           [0, 0, 1, z],
                           [0, 0, 0, 1]])
 
-    def _build_symbolic_model(self):
+    def _build_symbolic_transform(self):
         """Constructs the symbolic forward kinematics chain."""
         
         # TO: World     --- FROM: Base
@@ -99,7 +114,7 @@ class RobotKinematics():
         If joint paramenters are within limits, returns the EE position as a 3D vector.
         Otherwise, raises ValueError.
         """ 
-        
+        """
         for i, q in enumerate([q1, q2, q3, q4, q5]):
             low, high = self.joint_bounds[self.joint_keys[i]]
             
@@ -109,12 +124,48 @@ class RobotKinematics():
                     f"Joint {self.joint_keys[i]} is out of bounds! "
                     f"Input: {q}, Allowed Range: [{low}, {high}]"
                 )
-            
+        """    
         # Return the computed forward kinematics matrix if joint values within limits
-        return self._numeric_FK_model(q1, q2, q3, q4, q5)
+        return self._numeric_EE_pose(q1, q2, q3, q4, q5)
+
+    def jacobian_inverse(self, current_joint_angles, 
+                            singularity_threshold=0.05, lambda_max=0.1):
+        """
+        Computes joint angle velocities from a task-space desired velocity using the
+        Damped Least Squares (DLS) pseudo-inverse of the Jacobian (and prevent singularities).
+
+        For that , the DLS replaces 1/σ_i with σ_i/(σ_i² + λ²), which keeps
+        the solution bounded at the cost of a small positional error 
+
+        Based on Nakamura–Hanafusa variable damping rule.
+        """
+        # Compute Jacobian at current configuration (already a numpy array due to lambdify)
+        J = self._numeric_jacobian(current_joint_angles)
+
+        # Compute SVD decompositionof the Jacobian
+        U, singular_values, Vt = np.linalg.svd(J)
+
+        # Singularity analysis - High confition values/low eigen values indicate proximity to a singularity.
+        sigma_min = singular_values[-1]
+        is_singular = sigma_min < singularity_threshold
+
+        # Prepare adaptive DLS damping (Nakamura–Hanafusa 1986) ---
+        if is_singular:
+            # λ² scales from 0 (at threshold) to lambda_max² (at σ=0)
+            lambda_sq = lambda_max**2 * (1.0 - (sigma_min / singularity_threshold)**2)
+        else:
+            lambda_sq = 0.0
+
+        # Damped pseudo-inverse via SVD: σ_i / (σ_i² + λ²)
+        damped_inv_sigmas = singular_values / (singular_values**2 + lambda_sq)
+
+        # Compute target joint velocities
+        target_joint_velocities = Vt.T @ np.diag(damped_inv_sigmas) @ U.T
+
+        return target_joint_velocities, is_singular
 
     
-    def trial_inverse_kinematics(self, target_pose, n_restarts=50, error_threshold=1e-3, dedup_tol=0.05):
+    def inverse_kinematics(self, target_pose, initial_guess = [0, 0, 0, 0, 0], n_restarts=50, error_threshold=1e-3, dedup_tol=0.05):
         """
         Solves IK for [x, y, z, pitch, roll] using constrained optimization (SLSQP).
         Returns a list of all distinct joint configurations that reach the target pose.
@@ -122,9 +173,9 @@ class RobotKinematics():
         Returns an empty list if no solution is found.
         """
         def objective_function(q):
-            current_pose = np.array(self._numeric_FK_model(q)).flatten()
+            current_pose = np.array(self._numeric_EE_pose(*q)).flatten()
             weights = np.array([10.0, 10.0, 10.0, 1.0, 1.0])
-            return np.sum(((current_pose - np.array(target_pose))) ** 2 *)
+            return np.sum(((current_pose - np.array(target_pose))**2))
 
         bounds = list(self.joint_bounds.values())
 
@@ -159,11 +210,11 @@ class RobotKinematics():
                 solutions.append(candidate)
 
         return [sol.tolist() for sol in solutions]
-
+    
 
     def compute_workspace(self):
         """Computes the xyz coordinates for a range of joint angles."""
-        resolution = 30  # Number of points per joint
+        resolution = 10  # Number of points per joint
         
         t1_space = np.linspace(*self.joint_bounds['t1'], resolution)
         t2_space = np.linspace(*self.joint_bounds['t2'], resolution)

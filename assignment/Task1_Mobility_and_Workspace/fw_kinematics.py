@@ -37,6 +37,8 @@ def main():
     print("Symbolic Forward Kinematics Pose Matrix:")
     sp.pprint(symbolic_EE_pose)
 
+
+
     
     # Savve equations to a file. Uncomment if needed
     with open("robot_fw_kinematics.txt", "w", encoding="utf-8") as f:
@@ -46,12 +48,20 @@ def main():
         f.write(fw_kinematics_equation)
 
     print("\n[System] Symbolic equations have been saved to 'robot_fw_kinematics.txt'")
-    
 
+    with open("jacobian_fw_kinematics.txt", "w", encoding="utf-8") as f:
+        fw_kinematics_equation = sp.pretty(robot._symbolic_jacobian, use_unicode=False, wrap_line=False)
+
+        f.write("FORWARD KINEMATICS JACOBIAN SYMBOLIC EQUATIONS\n\n")
+        f.write(fw_kinematics_equation)
+
+    print("\n[System] Symbolic equations have been saved to 'jacobian_fw_kinematics.txt'")
+    
+"""
     # Calculate and plot
     x_pts, y_pts, z_pts = robot.compute_workspace()
     plot_workspace(x_pts, y_pts, z_pts)
-
+"""
 
 if __name__ == "__main__":
     main()

@@ -25,12 +25,12 @@ def main():
     ]
 
     for target in EE_pose_targets:
-        solutions = robot.trial_inverse_kinematics(target)
+        solutions = robot.inverse_kinematics(target)
 
         if not solutions:
             res_str = "No solution found"
         else:
-            res_str = [[round(a, 4) for a in sol] for sol in solutions]
+            res_str = [[round(a*180/np.pi, 4) for a in sol] for sol in solutions]
 
         print(f"{str(np.round(target, 3)):<45} | {res_str}")
     
