@@ -24,15 +24,18 @@ class RobotKinematics():
         
         # Extract EE Position
         self._symbolic_xyz_pos = self._symbolic_FK_transform[:3, 3]
-        self._symbolic_pitch = self.t2 + self.t3 + self.t4  # Approximation: sum of joint angles for pitch
-        self._symbolic_roll = self.t5                                 # Approximation: last joint angle 
+        #self._symbolic_pitch = self.t2 + self.t3 + self.t4 - sp.pi/2  # Approximation: sum of joint angles for pitch
+        #self._symbolic_roll = self.t5                                 # Approximation: last joint angle 
 
-        # Extract EE Orienteation - Standard ZYX Euler angles (yaw/pitch/roll) from the rotation matrix
-        """"
-        r00, r10, r20, r21, r22 = self._symbolic_FK_transform[0, 0], self._symbolic_FK_transform[1, 0], self._symbolic_FK_transform[2, 0],  self._symbolic_FK_transform[2, 1],  self._symbolic_FK_transform[2, 2]
-        self._symbolic_pitch = sp.atan2(r20, r00**2 + r10**2)     
-        self._symbolic_roll  = sp.atan2(r21/sp.cos(self._symbolic_pitch), r22/sp.cos(self._symbolic_pitch))
-        """
+        # Extract EE Orientation - ZXY Euler angles — yaw(Z) → pitch(X) → roll(Y)
+        r20 = self._symbolic_FK_transform[2, 0]
+        r21 = self._symbolic_FK_transform[2, 1]
+        r22 = self._symbolic_FK_transform[2, 2]
+
+        # ZXY: R = Rz(yaw) · Rx(pitch) · Ry(roll)
+        self._symbolic_pitch = sp.atan2(r21, sp.sqrt(r20**2 + r22**2))  # about X
+        self._symbolic_roll  = sp.atan2(-r20, r22)                        # about Y
+        
 
         # Combine  EE pose into a 5-element output vector: [x, y, z, pitch, roll]
         self._symbolic_EE_pose = sp.Matrix([*self._symbolic_xyz_pos, self._symbolic_pitch,self._symbolic_roll])  # Using the first solution branch for pitch and roll
