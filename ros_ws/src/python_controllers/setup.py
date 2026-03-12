@@ -25,6 +25,7 @@ setup(
             'example_vel_traj = python_controllers.example_vel_traj:main',
             'set_joint_position = python_controllers.set_joint_position:main',
             'read_ee_pose = python_controllers.read_ee_pose:main',
+            'read_EE_position = python_controllers.read_EE_position:main',
             'trajectory_follower = python_controllers.trajectory_follower:main',
             'workspace_visualizer = python_controllers.workspace_visualizer:main',
             'z_vel_controller = python_controllers.z_vel_controller:main',

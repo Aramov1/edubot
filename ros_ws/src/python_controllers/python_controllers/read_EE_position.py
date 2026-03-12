@@ -19,7 +19,7 @@ def quat_to_euler_zxy(x, y, z, w):
     r01 = 2.0 * (x * y - w * z)
     r11 = 1.0 - 2.0 * (x * x + z * z)
 
-    pitch = np.arctan2(r21, np.sqrt(r20**2 + r22**2))  # about X
+    pitch = np.arctan2(r21, np.sqrt(r20**2 + r22**2))    # about X
     roll  = np.arctan2(-r20, r22)                        # about Y
     yaw   = np.arctan2(-r01, r11)                        # about Z
 

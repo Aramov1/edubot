@@ -1,8 +1,10 @@
 import threading
+import time
 import numpy as np
 import rclpy
 from rclpy.node import Node
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from sensor_msgs.msg import JointState
 
 JOINT_NAMES = [
     'Shoulder_Rotation',
@@ -44,6 +46,51 @@ class SetJointPosition(Node):
 
     def set_target(self, positions_rad):
         self._target = list(positions_rad)
+
+
+class JointStateSetter:
+    """Publishes joint positions to ``joint_states`` (robot_state_publisher / RViz).
+
+    This is the approach required when only ``robot_state_publisher`` is running
+    (e.g. ``ros2 launch lerobot rviz.launch.py``), because there is no simulation
+    node to consume ``joint_cmds``.
+
+    Usage (external)::
+
+        rclpy.init()
+        node = rclpy.create_node('my_node')
+        setter = JointStateSetter(node)
+        setter.set([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])   # 6 joints, radians
+        node.destroy_node()
+        rclpy.shutdown()
+    """
+
+    def __init__(self, node: Node):
+        self._node = node
+        self._pub = node.create_publisher(JointState, 'joint_states', 10)
+
+    def set(self, positions_rad, joint_names=None):
+        """Publish *positions_rad* to ``joint_states`` and wait for TF to settle.
+
+        Parameters
+        ----------
+        positions_rad : sequence of float
+            Joint angles in radians (all 6 joints, including Gripper).
+        joint_names : list[str] or None
+            Override joint names; defaults to the module-level ``JOINT_NAMES``.
+        """
+        names = joint_names if joint_names is not None else JOINT_NAMES
+        msg = JointState()
+        msg.name = list(names)
+        msg.position = [float(v) for v in positions_rad]
+        for _ in range(10):
+            msg.header.stamp = self._node.get_clock().now().to_msg()
+            self._pub.publish(msg)
+            rclpy.spin_once(self._node, timeout_sec=0.05)
+        # Spin (not sleep) so TF callbacks are processed while waiting for
+        # robot_state_publisher to broadcast the updated transforms.
+        for _ in range(10):
+            rclpy.spin_once(self._node, timeout_sec=0.05)
 
 
 def _print_header():

@@ -91,7 +91,7 @@ def main():
         fk_roll_deg  = np.rad2deg(sol[4])
 
         print(f"\n================================================================")
-        print(f"[Test Joint Angles]          : {pose}")
+        print(f"[Test Joint Angles]          : {pose}ro")
         print(f"[Computed End-Effector Pose] : "
               f"x={sol[0]:.4f}  y={sol[1]:.4f}  "
               f"z={sol[2]:.4f}  pitch={fk_pitch_deg:.2f}°  roll={fk_roll_deg:.2f}°")

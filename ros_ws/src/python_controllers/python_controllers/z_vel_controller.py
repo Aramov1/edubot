@@ -57,7 +57,7 @@ class ZVelController(Node):
 
         self._vel_z   =  0.02
         self._tgt_y   =  0.0
-        self._tgt_x   =  1.0
+        self._tgt_x   =  0.0
         self._gain    =  2.0
         self._z_min   =  0.05
         self._z_max   =  0.25
