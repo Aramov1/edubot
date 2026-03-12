@@ -62,9 +62,9 @@ class EEPositionReader:
                     'world', 'gripper_center', Time())
                 pos = tf_stamped.transform.translation
                 rot = tf_stamped.transform.rotation
-                pitch_deg, roll_deg, _ = quat_to_euler_zxy(
+                pitch_deg, roll_deg, yaw_deg = quat_to_euler_zxy(
                     rot.x, rot.y, rot.z, rot.w)
-                return [pos.x, pos.y, pos.z, pitch_deg, roll_deg]
+                return [pos.x, pos.y, pos.z, pitch_deg, roll_deg, yaw_deg]
             except (tf2_ros.LookupException,
                     tf2_ros.ConnectivityException,
                     tf2_ros.ExtrapolationException):
