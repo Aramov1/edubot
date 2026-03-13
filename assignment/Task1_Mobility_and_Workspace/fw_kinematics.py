@@ -27,7 +27,7 @@ def main():
 
     # Test points joint angles and compute the end-effector pose
     desired_test_joints = [  # Example target joint angles
-        [0, 0, 0, 0, 0, 0],
+        [1, 0.5, 0, 0, 0, 0],
     ]
 
     # Ensure robot_state_publisher is running; auto-launch (no GUI) if missing.

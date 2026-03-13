@@ -1,7 +1,7 @@
 import sys
 
 # RobotKinematics lives outside the ROS workspace — add it to the path
-sys.path.insert(0, '/home/andre/TU_Delft/edubot/assignment')
+sys.path.insert(0, '/home/ruth/Desktop/TU_Delft/Q3/Phys_Int_Air_Space_Robots/Project/edubot/ros_ws/src/python_controllers/python_controllers')
 
 import rclpy
 import numpy as np
