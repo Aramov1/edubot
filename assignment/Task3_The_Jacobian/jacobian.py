@@ -32,11 +32,13 @@ def main():
         if solutions:
             jacobian_sol = robot.jacobian(*solutions[0]) # Use first IK solution for Jacobian
             
+            jacobian_sol_rounded = np.round(jacobian_sol, 4)
+
             print(f"Jacobian for target {target}: ")
-            sp.pprint(jacobian_sol)
+            sp.pprint(jacobian_sol_rounded)
         else:
             print(f"No IK solution found for target {target}, skipping Jacobian computation.")
-    
+
 
 if __name__ == "__main__":
     main()
