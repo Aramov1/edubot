@@ -24,11 +24,11 @@ def main():
 
     # Define EE pose targets: [x, y, z, pitch, roll]
     EE_pose_targets = [
-        [0.2, 0.2, 0.2, 1.57, 0.0],
-        [0.2, 0.1, 0.4, 0.0, 1.57],
-        [0.0, 0.0, 0.45, 0.785, 0.785],
-        [0.0, 0.0, 0.07, 3.141, 0.0],
-        [0.0, 0.0452, 0.45, 0.785, 3.141],
+        [0.2, 0.2, 0.2, 0.0, 1.57, 0.650],
+        [0.2, 0.1, 0.4, 0.0, 0.0, -1.57],
+        [0.0, 0.0, 0.45, 0.0, -0.785, 1.57],
+        [0.0, 0.0, 0.07, 3.141, 0.0, 0.0],
+        [0.0, 0.0452, 0.45, -0.785, 0.0, 3.141],
     ]
 
     # Ensure robot_state_publisher is running; auto-launch (no GUI) if missing.
@@ -79,11 +79,12 @@ def main():
         tx, ty, tz = target[0], target[1], target[2]
         pitch_deg = np.rad2deg(target[3])
         roll_deg  = np.rad2deg(target[4])
+        yaw_deg   = np.rad2deg(target[5])
 
         print(f"\n================================================================")
         print(f"[Test Target EE Position]    : "
               f"x={tx:.4f}  y={ty:.4f}  z={tz:.4f}  "
-              f"pitch={pitch_deg:.2f}°  roll={roll_deg:.2f}°")
+              f"pitch={pitch_deg:.2f}°  roll={roll_deg:.2f}°  yaw={yaw_deg:.2f}°")
 
         if not solutions:
             print(f"[No IK solution found]")
@@ -106,11 +107,12 @@ def main():
                 dist = np.sqrt((tx - rx)**2 + (ty - ry)**2 + (tz - rz)**2)
                 pitch_err = abs(pitch_deg - rviz_pose[3])
                 roll_err  = abs(roll_deg  - rviz_pose[4])
+                yaw_err   = abs(yaw_deg   - rviz_pose[5])
                 print(f"[RViz End-Effector Pose][{i}]: "
                       f"x={rviz_pose[0]:.4f}  y={rviz_pose[1]:.4f}  "
-                      f"z={rviz_pose[2]:.4f}  pitch={rviz_pose[3]:.2f}°  roll={rviz_pose[4]:.2f}°")
+                      f"z={rviz_pose[2]:.4f}  pitch={rviz_pose[3]:.2f}°  roll={rviz_pose[4]:.2f}°   yaw={rviz_pose[5]:.2f}°")
                 print(f"[Error                 ][{i}]: "
-                      f"Dist={dist:.4f} m  pitch_err={pitch_err:.2f}°  roll_err={roll_err:.2f}°")
+                      f"Dist={dist:.4f} m  pitch_err={pitch_err:.2f}°  roll_err={roll_err:.2f}°  yaw_err={yaw_err:.2f}°")
             else:
                 print(f"[RViz End-Effector Pose][{i}]: [TF lookup failed]")
 
