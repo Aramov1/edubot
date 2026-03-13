@@ -26,18 +26,19 @@ def main():
         [0.0, 0.0452, 0.45, -0.785, 0.0, 3.141],
     ]
 
-    
+    Jacobians = []
     for target in EE_pose_targets:
         solutions = robot.inverse_kinematics(target) 
         if solutions:
             jacobian_sol = robot.jacobian(*solutions[0]) # Use first IK solution for Jacobian
             
             jacobian_sol_rounded = np.round(jacobian_sol, 4)
-
+            Jacobians.append(jacobian_sol)
             print(f"Jacobian for target {target}: ")
             sp.pprint(jacobian_sol_rounded)
         else:
             print(f"No IK solution found for target {target}, skipping Jacobian computation.")
+    return Jacobians
 
 
 if __name__ == "__main__":
