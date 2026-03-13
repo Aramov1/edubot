@@ -137,6 +137,12 @@ class RobotKinematics():
             
         return self._numeric_EE_pose(q1, q2, q3, q4, q5)
 
+    def jacobian(self, q1, q2, q3, q4, q5):
+        """Returns the 5x5 Jacobian matrix at the given joint configuration."""
+        self._check_joint_limits(q1, q2, q3, q4, q5)
+        return self._numeric_jacobian(q1, q2, q3, q4, q5)
+    
+
     def jacobian_inverse(self, current_joint_angles, 
                             singularity_threshold=0.05, lambda_max=0.1):
         """
