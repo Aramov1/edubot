@@ -17,6 +17,8 @@ def main():
     symbolic_jacobian = robot._symbolic_jacobian
     print("Symbolic Jacobian Matrix:")
     sp.pprint(symbolic_jacobian)
+   
+    #print(sp.latex(symbolic_jacobian))
 
     EE_pose_targets = [
         [0.2, 0.2, 0.2, 0.0, 1.57, 0.650],
