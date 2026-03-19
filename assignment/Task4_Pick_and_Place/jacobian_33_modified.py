@@ -11,7 +11,7 @@ import sympy as sp
 from robot_kinematics import RobotKinematics
 
 
-def main():
+def compute_velocities(current_position, target):
     robot = RobotKinematics()
 
     # Print symbolic Jacobian matrix
@@ -21,7 +21,6 @@ def main():
     parts = [p for p in re.split(r"[\s,]+", text.strip()) if p]
     if len(parts) != 6:
         raise ValueError(f"Expected 6 values, got {len(parts)}: {parts}")
-    target = np.array([float(x) for x in parts], dtype=float)
 
     solution = robot.inverse_kinematics(target.tolist())
     if not solution:
@@ -34,7 +33,7 @@ def main():
 
     # Compute a constant end-effector velocity (initial position of end-effector is supposed to be 0)
     travel_time = 5.0  # seconds
-    velocity = (np.zeros(6, dtype=float) - target) / travel_time
+    velocity = (current_position - target) / travel_time
 
     # Filter singularities by checking the smallest singular value of the Jacobian
     max_value = np.max(jacobian)
