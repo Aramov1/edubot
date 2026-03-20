@@ -144,7 +144,7 @@ class RobotKinematics():
     
 
     def jacobian_inverse(self, current_joint_angles, 
-                            singularity_threshold=0.05, lambda_max=0.1):
+                            singularity_threshold=0.1, lambda_max=0.1):
         """
         Computes joint angle velocities from a task-space desired velocity using the
         Damped Least Squares (DLS) pseudo-inverse of the Jacobian (and prevent singularities).
@@ -157,10 +157,10 @@ class RobotKinematics():
         # Compute Jacobian at current configuration (already a numpy array due to lambdify)
         J = self._numeric_jacobian(current_joint_angles)
 
-        # Compute SVD decompositionof the Jacobian
+        # Compute SVD decomposition of the Jacobian
         U, singular_values, Vt = np.linalg.svd(J)
 
-        # Singularity analysis - High confition values/low eigen values indicate proximity to a singularity.
+        # Singularity analysis - High condition values/low eigenvalues indicate proximity to a singularity.
         sigma_min = singular_values[-1]
         is_singular = sigma_min < singularity_threshold
 
