@@ -14,7 +14,11 @@ from robot_kinematics import RobotKinematics
 def compute_velocities(current_position, target):
     robot = RobotKinematics()
 
-    # Print symbolic Jacobian matrix
+    # Declare singularity-related variables
+    singularity_threshold=0.05
+    lambda_max=0.1
+
+    # Compute symbolic Jacobian matrix
     symbolic_jacobian = robot._symbolic_jacobian
 
     solution = robot.inverse_kinematics(target.tolist())
@@ -23,14 +27,26 @@ def compute_velocities(current_position, target):
         return
 
     jacobian = robot.jacobian(*solution[0])  # Use first IK solution for Jacobian
-    print(f"Jacobian for target {target.tolist()}: ")
-    sp.pprint(jacobian)
 
     # Compute a constant end-effector velocity (initial position of end-effector is supposed to be 0)
     travel_time = 5.0  # seconds
     velocity = (current_position - target) / travel_time
 
-    # Filter singularities by checking the smallest singular value of the Jacobian
+    # Compute SVD decomposition of the Jacobian
+    U, singular_values, Vt = np.linalg.svd(jacobian)
+
+    # Singularity analysis - High condition values/low eigenvalues indicate proximity to a singularity.
+    sigma_min = singular_values[-1]
+    is_singular = sigma_min < singularity_threshold
+
+    # Prepare adaptive DLS damping (Nakamura–Hanafusa 1986) ---
+    if is_singular:
+        # λ² scales from 0 (at threshold) to lambda_max² (at σ=0)
+        lambda_sq = lambda_max**2 * (1.0 - (sigma_min / singularity_threshold)**2)
+    else:
+        lambda_sq = 0.0
+    
+
     max_value = np.max(jacobian)
     if max_value > 5:
         print(f"Warning: Near singularity detected (max Jacobian value = {max_value:.4f}). "
