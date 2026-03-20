@@ -1,0 +1,35 @@
+{
+  "_comment": "Positions in metres, angles in radians. Adjust A/B to your physical setup.",
+  "locations": {
+    "A": { "x": 0.12, "y":  0.10, "z": 0.04 },
+    "B": { "x": 0.12, "y": -0.10, "z": 0.04 }
+  },
+  "home": { "joint_angles_rad": [0.0, 0.0, 0.0, 0.0, 0.0] },
+  "motion": {
+    "approach_z": 0.15,
+    "threshold_approach_m": 0.015,
+    "threshold_pick_m": 0.015,
+    "threshold_lift_m": 0.015,
+    "threshold_home_m": 0.020,
+    "dwell_grasp_s": 0.5,
+    "dwell_release_s": 0.5,
+    "descent_timeout_s": 5.0,
+    "max_cycles": 2
+  },
+  "impedance": {
+    "k_xy": 3.0,
+    "k_z": 0.8,
+    "k_rot": 1.0,
+    "d_xy": 0.3,
+    "d_z": 0.1,
+    "d_rot": 0.1,
+    "max_cart_vel_m_s": 0.10,
+    "max_joint_vel_rad_s": 1.0
+  },
+  "gripper": {
+    "open_angle_rad": 1.5707963,
+    "close_angle_rad": 0.3,
+    "vel_rad_s": 0.5,
+    "dead_band_rad": 0.05
+  }
+}

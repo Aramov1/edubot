@@ -3,7 +3,7 @@ import os
 _ASSIGNMENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PROJECT_ROOT   = os.path.dirname(_ASSIGNMENT_DIR)
 sys.path.insert(0, _ASSIGNMENT_DIR)
-sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'ros_ws', 'src', 'python_controllers'))
+sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'ros_ws', 'src', 'assignment'))
 
 import subprocess
 import time
@@ -12,15 +12,19 @@ import sympy as sp
 import rclpy
 from rclpy.node import Node
 from robot_kinematics import RobotKinematics
-from python_controllers.set_joint_position import JointStateSetter
-from python_controllers.read_EE_position import EEPositionReader
+from assignment.joint_state_setter import JointStateSetter
+from assignment.read_ee_position import EEPositionReader
 
 
 def main():
     # Initialize the robot kinematics
     robot = RobotKinematics()
-    symbolic_EE_pose = robot._symbolic_EE_pose
+    #symbolic_EE_pose = robot._symbolic_EE_pose
 
+    yaw, pitch, roll = sp.symbols('yaw pitch roll')
+    Rzxy = robot._build_symbolic_ZXY(yaw, pitch, roll)
+    sp.pprint(Rzxy)
+    
     # Output forward kinematics symbolic equations
     #print("Symbolic Forward Kinematics Pose Matrix:")
     #sp.pprint(symbolic_EE_pose)
@@ -91,14 +95,15 @@ def main():
         fk_roll_deg  = np.rad2deg(sol[4])
 
         print(f"\n================================================================")
-        print(f"[Test Joint Angles]          : {pose}ro")
+        fk_yaw_deg = np.rad2deg(sol[5])
+        print(f"[Test Joint Angles]          : {pose}")
         print(f"[Computed End-Effector Pose] : "
               f"x={sol[0]:.4f}  y={sol[1]:.4f}  "
-              f"z={sol[2]:.4f}  pitch={fk_pitch_deg:.2f}°  roll={fk_roll_deg:.2f}°")
+              f"z={sol[2]:.4f}  pitch={sol[3]:.2f}°  roll={sol[4]:.2f}°  yaw={sol[5]:.2f}°")
         if rviz_pose is not None:
             print(f"[RVIZ End-Effector Pose]     : "
                   f"x={rviz_pose[0]:.4f}  y={rviz_pose[1]:.4f}  "
-                  f"z={rviz_pose[2]:.4f}  pitch={rviz_pose[3]:.2f}°  roll={rviz_pose[4]:.2f}°")
+                  f"z={rviz_pose[2]:.4f}  pitch={rviz_pose[3]:.2f}°  roll={rviz_pose[4]:.2f}°  yaw={rviz_pose[5]:.2f}°")
         else:
             print(f"[RVIZ End-Effector Pose]     : [TF lookup failed]")
         print(f"================================================================\n")
@@ -107,7 +112,7 @@ def main():
     rclpy.shutdown()
     if rsp_proc is not None:
         rsp_proc.terminate()
-
+    
 
 if __name__ == "__main__":
     main()
