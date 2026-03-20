@@ -188,7 +188,7 @@ class RobotKinematics():
         Returns an empty list if no solution is found.
         """
         def objective_function(q):
-            current_pose = np.array(self._numeric_EE_pose(*q)).flatten()
+            current_pose = np.array(self._numeric_EE_pose(*q)).flatten()[:len(target_pose)]  # Get current EE pose for the given joint angles
             weights = np.array([10.0, 10.0, 10.0, 1.0, 1.0])
             return np.sum(((current_pose - np.array(target_pose))**2))
 

@@ -26,6 +26,8 @@ setup(
             'set_joint_position = python_controllers.set_joint_position:main',
             'read_ee_pose = python_controllers.read_ee_pose:main',
             'read_EE_position = python_controllers.read_EE_position:main',
+            'publish_ee_pose = python_controllers.publish_ee_pose:main',
+            'visualize_ee_trajectory = python_controllers.visualize_ee_trajectory:main',
             'trajectory_follower = python_controllers.trajectory_follower:main',
             'workspace_visualizer = python_controllers.workspace_visualizer:main',
             'z_vel_controller = python_controllers.z_vel_controller:main',
