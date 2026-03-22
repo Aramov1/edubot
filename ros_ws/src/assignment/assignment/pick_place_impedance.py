@@ -167,6 +167,10 @@ class ImpedanceController:
         # Positional error in Cartesian space
         e_pos = x_des - x_cur          # (6,)
 
+        # Wrap orientation error components to [-π, π] to handle angle discontinuities
+        # (e.g. rot_x near ±π can jump by 2π without wrapping)
+        e_pos[3:] = (e_pos[3:] + np.pi) % (2 * np.pi) - np.pi
+
         # Damping term: oppose current velocity (desired velocity = 0 → hold)
         e_vel = -dx_cur                 # (6,)
 
@@ -220,7 +224,7 @@ class GripperController:
         error = self._close_angle - current_angle
         return -self._vel if abs(error) > self._dead_band else 0.0
 
-    def command_hold(self) -> float:
+    def command_hold(self, current_angle: float) -> float:
         """Hold current gripper position."""
         return 0.0
 
@@ -302,6 +306,10 @@ class PickPlaceImpedanceNode(Node):
 
         # Home joint configuration
         self._home_q = np.array(self._cfg['home']['joint_angles_rad'])
+
+        # Fixed EE orientation: rot_x=π (gripper down), rot_y=0, rot_z from home FK
+        _home_pose = np.array(self._robot.forward_kinematics(self._home_q)).flatten()
+        self._fixed_orientation = np.array([np.pi, 0.0, _home_pose[5]])
 
         # Runtime state
         self._current_q = None       # (6,) — 5 arm joints + 1 gripper, from joint_states
@@ -411,7 +419,7 @@ class PickPlaceImpedanceNode(Node):
         q_raw = np.array([name_to_pos.get(n, 0.0) for n in JOINT_NAMES])
 
         # Clamp arm joints [0:5] to their allowed ranges; leave gripper [5] unclamped
-        bounds = list(self._robot.joint_bounds.values())
+        bounds = self._robot.joint_bounds
         arm_q_clamped = np.array([
             np.clip(q_raw[i], bounds[i][0], bounds[i][1]) for i in range(5)
         ])
@@ -434,7 +442,7 @@ class PickPlaceImpedanceNode(Node):
         """Drive all arm joints to the home configuration."""
         # Compute FK at home angles to get the home EE pose
         home_pose = np.array(
-            self._robot.forward_kinematics(*self._home_q)
+            self._robot.forward_kinematics(self._home_q)
         ).flatten()
 
         err = self._run_impedance_step(home_pose, self._gripper.command_open)
@@ -473,7 +481,7 @@ class PickPlaceImpedanceNode(Node):
     def _state_grasp(self) -> None:
         """Close the gripper and dwell to secure the object."""
         arm_q = self._current_q[:5]
-        x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
+        x_cur = np.array(self._robot.forward_kinematics(arm_q)).flatten()
         # Hold current EE pose while closing
         self._run_impedance_step(x_cur, lambda _: 0.0, hold_arm=True)
 
@@ -532,7 +540,7 @@ class PickPlaceImpedanceNode(Node):
         """Open the gripper and dwell before lifting."""
         # Hold arm in place while opening
         arm_q = self._current_q[:5]
-        x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
+        x_cur = np.array(self._robot.forward_kinematics(arm_q)).flatten()
         self._run_impedance_step(x_cur, lambda _: 0.0, hold_arm=True)
 
         gripper_vel = self._gripper.command_open(self._current_q[5])
@@ -562,7 +570,7 @@ class PickPlaceImpedanceNode(Node):
     def _state_return_home(self) -> None:
         """Return to home configuration before next cycle or finishing."""
         home_pose = np.array(
-            self._robot.forward_kinematics(*self._home_q)
+            self._robot.forward_kinematics(self._home_q)
         ).flatten()
 
         err = self._run_impedance_step(home_pose, self._gripper.command_open)
@@ -605,9 +613,10 @@ class PickPlaceImpedanceNode(Node):
         This is used for APPROACH, DESCEND, LIFT, and MOVE states.
         """
         arm_q = self._current_q[:5]
-        x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
+        x_cur = np.array(self._robot.forward_kinematics(arm_q)).flatten()
         target = np.copy(x_cur)
-        target[:3] = xyz              # override XYZ, leave orientation unchanged
+        target[:3] = xyz                       # commanded XYZ
+        target[3:] = self._fixed_orientation   # enforce rot_x=π, rot_y=0, rot_z=const
         return target
 
     def _run_impedance_step(
@@ -628,7 +637,7 @@ class PickPlaceImpedanceNode(Node):
             Position error norm (XYZ only) in metres.
         """
         arm_q = self._current_q[:5]
-        x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
+        x_cur = np.array(self._robot.forward_kinematics(arm_q)).flatten()
 
         # Update finite-difference EE velocity estimate
         dx = self._update_dx_cur(x_cur)
@@ -657,7 +666,7 @@ class PickPlaceImpedanceNode(Node):
     def _position_error(self, target_xyz: np.ndarray) -> float:
         """Euclidean XYZ distance between current EE and target."""
         arm_q = self._current_q[:5]
-        x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
+        x_cur = np.array(self._robot.forward_kinematics(arm_q)).flatten()
         return float(np.linalg.norm(target_xyz - x_cur[:3]))
 
     def _update_dx_cur(self, x_cur: np.ndarray) -> np.ndarray:
@@ -697,7 +706,7 @@ class PickPlaceImpedanceNode(Node):
             if q[i] <= lower[i] and dq[i] < 0 → dq[i] = 0  (would go lower)
         """
         q_dot_safe = q_dot.copy()
-        bounds = list(self._robot.joint_bounds.values())
+        bounds = self._robot.joint_bounds
         for i in range(5):
             lo, hi = bounds[i]
             if self._current_q[i] >= hi and q_dot_safe[i] > 0.0:
