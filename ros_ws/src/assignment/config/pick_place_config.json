@@ -1,8 +1,8 @@
 {
   "_comment": "Positions in metres, angles in radians. Adjust A/B to your physical setup.",
   "locations": {
-    "A": { "x": 0.12, "y":  0.10, "z": 0.04 },
-    "B": { "x": 0.12, "y": -0.10, "z": 0.04 }
+    "A": { "x": 0.2, "y":  0.25, "z": 0.02 },
+    "B": { "x": -0.2, "y": 0.25, "z": 0.02 }
   },
   "home": { "joint_angles_rad": [0.0, 0.0, 0.0, 0.0, 0.0] },
   "motion": {
@@ -17,14 +17,14 @@
     "max_cycles": 2
   },
   "impedance": {
-    "k_xy": 3.0,
-    "k_z": 0.8,
+    "k_xy": 6.0,
+    "k_z": 2.0,
     "k_rot": 1.0,
     "d_xy": 0.3,
     "d_z": 0.1,
     "d_rot": 0.1,
-    "max_cart_vel_m_s": 0.10,
-    "max_joint_vel_rad_s": 1.0
+    "max_cart_vel_m_s": 0.20,
+    "max_joint_vel_rad_s": 1.5
   },
   "gripper": {
     "open_angle_rad": 1.5707963,

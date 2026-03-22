@@ -27,12 +27,13 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'set_joint_conf       = assignment.joint_state_setter:main',
-            'read_ee_pose         = assignment.read_ee_position:main',
-            'workspace_visualizer = assignment.workspace_visualizer:main',
+            'visualize_ee_trajectory = assignment.visualize_ee_trajectory:main',
             'trajectory_follower      = assignment.trajectory_follower:main',
             'vel_trajectory_follower  = assignment.vel_trajectory_follower:main',
             'pick_place_impedance     = assignment.pick_place_impedance:main',
+            'set_joint_conf = assignment.set_joint_conf:main',
+            'read_ee_cart = assignment.read_ee_cart:main',
+            'publish_ee_pose = assignment.publish_ee_pose:main'
         ],
     },
 )

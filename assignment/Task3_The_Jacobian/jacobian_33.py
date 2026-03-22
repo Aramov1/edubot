@@ -15,7 +15,7 @@ def main():
     robot = RobotKinematics()
 
     # Print symbolic Jacobian matrix
-    symbolic_jacobian = robot._symbolic_jacobian
+    symbolic_jacobian = robot._symbolic_jac
 
     text = input("Enter end-effector position and orientation (x, y, z, rx, ry, rz): ")
     parts = [p for p in re.split(r"[\s,]+", text.strip()) if p]

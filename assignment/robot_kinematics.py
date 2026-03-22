@@ -3,90 +3,61 @@ import sympy as sp
 from sympy.utilities.lambdify import lambdify
 from scipy.optimize import minimize
 
+# Limited Joint Conf
+JOINT_CONFIG_LIMITS = {
+    'Shoulder_Rotation': (-2.0, 2.0),
+    'Shoulder_Pitch':    (-np.pi/2, np.pi/2),
+    'Elbow':             (-np.pi/2, np.pi/2),
+    'Wrist_Pitch':       (-np.pi/2, np.pi/2),
+    'Wrist_Roll':        (-np.pi, np.pi),
+}
+
+# # Unlimited Joint Conf
+# JOINT_CONFIG_LIMITS = {
+#     'Shoulder_Rotation': (-np.pi, 2np.pi),
+#     'Shoulder_Pitch':    (-np.pi, 2np.pi),
+#     'Elbow':             (-np.pi, 2np.pi),
+#     'Wrist_Pitch':       (-np.pi, 2np.pi),
+#     'Wrist_Roll':        (-np.pi, 2np.pi),
+# }
+
 class RobotKinematics():
     def __init__(self):
-        # Define robot configuration parameters as symbolic variables
-        self.t1, self.t2, self.t3, self.t4, self.t5 = sp.symbols('theta_1 theta_2 theta_3 theta_4 theta_5')
-        self.joint_vars = [self.t1, self.t2, self.t3, self.t4, self.t5]
-
-        # Define joint limits (in radians)
-        self.joint_keys = ['t1', 't2', 't3', 't4', 't5']
-        self.joint_bounds = {
-            't1': (-2.0, 2.0),
-            't2': (-np.pi/2, np.pi/2),
-            't3': (-np.pi/2, np.pi/2),
-            't4': (-np.pi/2, np.pi/2),
-            't5': (-np.pi, np.pi),
-        }
-
+        # Joint Configuration Symbols
+        self.joint_vars = sp.symbols('q1:6')
+        self.joint_names = list(JOINT_CONFIG_LIMITS.keys())
+        self.joint_bounds = list(JOINT_CONFIG_LIMITS.values())
         
-        # Build Symbolic Transform from the Gripper Center reference frame to World reference Frame
+        # Build Symbolic Transform 
         self._symbolic_transform = self._build_symbolic_transform()
-        
-        # Extract EE Position
-        self._symbolic_xyz_pos = self._symbolic_transform[:3, 3]
-        
-        # Extract EE Orientation - relative to home orientation (home = pitch=roll=yaw=0)
-        # R_home.T pre-multiplied so that all-zero joints → (0, 0, 0) orientation
-        R = self._symbolic_transform[:3, :3]
-        R_home_inv = sp.Matrix([[1, 0, 0], [0, 0, -1], [0, 1, 0]])  # R_home.T
-        R_rel = R_home_inv * R
 
-        r01 = R_rel[0, 1]
-        r11 = R_rel[1, 1]
-        r20 = R_rel[2, 0]
-        r21 = R_rel[2, 1]
-        r22 = R_rel[2, 2]
+        # Build Symbolic FK
+        self._symbolic_fk = self._build_symbolic_fk()
 
-        # ZXY: R = Rz(yaw) · Rx(pitch) · Ry(roll)
-        self._symbolic_pitch = sp.asin(r21)         # about X
-        self._symbolic_roll  = sp.atan2(-r20, r22)  # about Y
-        self._symbolic_yaw   = sp.atan2(-r01, r11)  # about Z
+        # Build Symbolic Jacobian
+        self._symbolic_jac = self._symbolic_fk.jacobian(self.joint_vars)
 
-        # Combine  EE pose into a 6-element output vector: [x, y, z, pitch, roll, yaw]
-        self._symbolic_EE_pose = sp.Matrix([*self._symbolic_xyz_pos, self._symbolic_pitch,self._symbolic_roll, self._symbolic_yaw])  # Using the first solution branch for pitch and roll
-
-        # Build Numerical Forward kinematics model
-        self._numeric_EE_pose = lambdify(args = self.joint_vars, expr = self._symbolic_EE_pose, modules='numpy')
-
-
-
-
-        # Build Symbolic Jacobian Matrix: J = d(EE_pose)/d(joint_vars)
-        self._symbolic_jacobian = self._symbolic_EE_pose.jacobian(sp.Matrix(self.joint_vars))
-
-        
+        # Build Numerical FK
+        self._numeric_fk = lambdify(args = self.joint_vars, expr = self._symbolic_fk, modules='numpy')
 
         # Build Numerical Jacobian
-        self._numeric_jacobian = lambdify(args = self.joint_vars, expr = self._symbolic_jacobian, modules='numpy')
-        
-        """
+        self._numeric_jac = lambdify(args = self.joint_vars, expr = self._symbolic_jac, modules='numpy')
 
-        # Build Symbolic Inverse Kinematics model: Jacobian J = d(EE_pose)/d(joint_vars)
-        # J is a 5x5 matrix where J[i,j] = d(EE_pose[i])/d(joint_vars[j])
-        # IK update rule: delta_q = J^+ * delta_EE  (J^+ = pseudo-inverse of J)
-        self._symbolic_IK_model = self._symbolic_EE_pose.jacobian(sp.Matrix(self.joint_vars))
-
-        # Numerical Jacobian for use in IK solvers
-        self._numeric_IK_model = lambdify(args = self.joint_vars, expr = self._symbolic_IK_model, modules='numpy')
-
-        """
-
-    def _sym_rot_x(self, theta):
+    def _sym_rot_x(self, t):
         return sp.Matrix([[1,  0,              0,             0],
-                          [0,  sp.cos(theta), -sp.sin(theta), 0],
-                          [0,  sp.sin(theta),  sp.cos(theta), 0],
+                          [0,  sp.cos(t), -sp.sin(t), 0],
+                          [0,  sp.sin(t),  sp.cos(t), 0],
                           [0,  0,              0,             1]])
     
-    def _sym_rot_y(self, theta):
-        return sp.Matrix([[sp.cos(theta),  0, sp.sin(theta), 0],
-                          [0,             1, 0,             0],
-                          [-sp.sin(theta), 0, sp.cos(theta), 0],
+    def _sym_rot_y(self, t):
+        return sp.Matrix([[sp.cos(t),  0, sp.sin(t), 0],
+                          [0,              1, 0,             0],
+                          [-sp.sin(t), 0, sp.cos(t), 0],
                           [0,              0, 0,             1]])
 
-    def _sym_rot_z(self, theta):
-        return sp.Matrix([[sp.cos(theta), -sp.sin(theta), 0, 0],
-                          [sp.sin(theta),  sp.cos(theta), 0, 0],
+    def _sym_rot_z(self, t):
+        return sp.Matrix([[sp.cos(t), -sp.sin(t), 0, 0],
+                          [sp.sin(t),  sp.cos(t), 0, 0],
                           [0,              0,             1, 0],
                           [0,              0,             0, 1]])
 
@@ -96,29 +67,28 @@ class RobotKinematics():
                           [0, 0, 1, z],
                           [0, 0, 0, 1]])
 
-    def _build_symbolic_ZXY(self, yaw, pitch, roll):
-        return self._sym_rot_z(yaw) * self._sym_rot_x(pitch) * self._sym_rot_y(roll)
-
     def _build_symbolic_transform(self):
-        """Constructs the symbolic forward kinematics chain."""
         
+        # Extract Joint Symbols
+        q1, q2, q3, q4, q5 = self.joint_vars
+
         # TO: World     --- FROM: Base
         T_world_base = self._sym_trans(0, 0, 0) * self._sym_rot_z(sp.pi)
         
-        # TO: Base      --- FROM: Shoulder (Rotation t1)
-        T_base_shoulder = self._sym_trans(0, -0.0452, 0.0165) * self._sym_rot_z(self.t1)
+        # TO: Base      --- FROM: Shoulder (Rotation q1)
+        T_base_shoulder = self._sym_trans(0, -0.0452, 0.0165) * self._sym_rot_z(q1)
         
-        # TO: Shoulder  --- FROM: Upperarm (Rotation t2)
-        T_shoulder_upperarm = self._sym_trans(0, -0.0306, 0.1025) * self._sym_rot_y(-sp.pi/2) * self._sym_rot_z(self.t2) 
+        # TO: Shoulder  --- FROM: Upperarm (Rotation q2)
+        T_shoulder_upperarm = self._sym_trans(0, -0.0306, 0.1025) * self._sym_rot_y(-sp.pi/2) * self._sym_rot_z(q2) 
         
-        # TO: Upperarm  --- FROM: Lowerarm (Rotation t3)
-        T_upperarm_lowerarm = self._sym_trans(0.11257, -0.028, 0) * self._sym_rot_z(self.t3) 
+        # TO: Upperarm  --- FROM: Lowerarm (Rotation q3)
+        T_upperarm_lowerarm = self._sym_trans(0.11257, -0.028, 0) * self._sym_rot_z(q3) 
         
-        # TO: Lowerarm  --- FROM: Wrist (Rotation t4)
-        T_lowerarm_wrist = self._sym_trans(0.0052, -0.1349, 0) * self._sym_rot_z(sp.pi/2) * self._sym_rot_z(self.t4)
+        # TO: Lowerarm  --- FROM: Wrist (Rotation q4)
+        T_lowerarm_wrist = self._sym_trans(0.0052, -0.1349, 0) * self._sym_rot_z(sp.pi/2) * self._sym_rot_z(q4)
         
-        # TO: Wrist     --- FROM: Gripper
-        T_wrist_gripper = self._sym_trans(-0.0601, 0, 0) * self._sym_rot_y(-sp.pi/2) * self._sym_rot_z(self.t5) 
+        # TO: Wrist     --- FROM: Gripper (Rotation q5)
+        T_wrist_gripper = self._sym_trans(-0.0601, 0, 0) * self._sym_rot_y(-sp.pi/2) * self._sym_rot_z(q5) 
 
         # TO: Gripper     --- FROM: Gripper Center
         T_gripper_grippercenter = self._sym_trans(0, 0, 0.075)
@@ -126,51 +96,66 @@ class RobotKinematics():
         # Full  kinematic Chain
         return T_world_base * T_base_shoulder * T_shoulder_upperarm * T_upperarm_lowerarm * T_lowerarm_wrist * T_wrist_gripper * T_gripper_grippercenter
 
-    def _check_joint_limits(self, q1, q2, q3, q4, q5):
-        """Checks if the given joint angles are within the defined limits."""
-        for i, q in enumerate([q1, q2, q3, q4, q5]):
-            low, high = self.joint_bounds[self.joint_keys[i]]
-            if np.any(q < low) or np.any(q > high):
-                raise ValueError(
-                    f"Joint {self.joint_keys[i]} is out of bounds! "
-                    f"Input: {q}, Allowed Range: [{low}, {high}]"
-                )
-            
+    def _build_symbolic_fk(self):
+        
+        # Extract EE Pose
+        pos = self._symbolic_transform[:3, 3]
+        rot = self._symbolic_transform[:3, :3]
+        
+        # Compute Euler Angles (Extrinsic XYZ / Intrinsic zyx)
+        rot_x = sp.atan2(rot[2, 1], rot[2, 2])                               # rot_x, about X   
+        rot_y = sp.atan2(-rot[2, 0], sp.sqrt(rot[2, 1]**2 + rot[2, 2]**2))   # rot_y, about Y
+        rot_z = sp.atan2(rot[1, 0], rot[0, 0])                               # rot_z, about Z
 
-    def forward_kinematics(self, q1, q2, q3, q4, q5):
-        """
-        If joint paramenters are within limits, returns the EE position as a 3D vector.
-        Otherwise, raises ValueError.
-        """ 
+        return sp.Matrix([*pos, rot_x, rot_y, rot_z])  
 
-        # Ensure input joint angles are within allowed limits before computing FK
-        self._check_joint_limits(q1, q2, q3, q4, q5)
-            
-        return self._numeric_EE_pose(q1, q2, q3, q4, q5)
+    def _check_joint_limits(self, joints):
+        # Check number of joint configurations
+        if len(joints) != len(self.joint_names):
+            raise ValueError(f"Joint Configuration Refused. Expected 5 values, got {len(joints)}")
+        
+        for i, q in enumerate(joints):
+            low, high = self.joint_bounds[i]
+            if not np.all((q >= low) & (q <= high)):
+                raise ValueError(f"Joint Configuration Refused. {self.joint_names[i]} outside [{low:.3f}, {high:.3f}]")
+        
+    def forward_kinematics(self, joints):
+        """Compute 6-DOF pose, if joint configuration within bounds.
 
-    
-    def inverse_kinematics(self, target_pose, initial_guess = [0, 0, 0, 0, 0], n_restarts=50, error_threshold=1e-4, dedup_tol=0.05):
+        Scalar inputs  → returns shape (6,)   [x, y, z, rx, ry, rz]
+        Vectorized inputs → returns shape (6, N) [row per DOF, column per sample]
         """
-        Solves IK for [x, y, z, pitch, roll] using constrained optimization (SLSQP).
-        Returns a list of all distinct joint configurations that reach the target pose.
-        Each configuration is a 5-element list [q1, q2, q3, q4, q5].
-        Returns an empty list if no solution is found.
+        self._check_joint_limits(joints)
+        # squeeze: scalar (6,1)→(6,) | vectorized (6,1,N)→(6,N)
+        return np.squeeze(np.array(self._numeric_fk(*joints)))
+
+    def inverse_kinematics(self, target_pose, n_restarts=25, error_threshold=1e-5, dedup_tol=0.01):
         """
+        Explores the joint space to find multiple valid solutions.
+        Returns a list of all unique solutions found.
+        """
+
         def objective_function(q):
-            # Truncate FK output to the number of DOF specified in target_pose so that
-            # only the requested components are constrained (e.g. 5 = [x,y,z,pitch,roll],
-            # 6 = [x,y,z,pitch,roll,yaw]).  A 5-DOF robot cannot satisfy all 6 DOF at once.
-            current_pose = np.array(self._numeric_EE_pose(*q)).flatten()[:len(target_pose)]
-            return np.sum((current_pose - np.array(target_pose))**2)
-
-        bounds = list(self.joint_bounds.values())
-
-        # No fixed seed: each call explores a different random region of joint space
+            # Only compare the DOF provided in the target (e.g., first 3 for fix position)
+            target = np.array(target_pose)
+            current_pose = self.forward_kinematics(q)[:len(target)]
+            
+            n_pos = 3  # first components are Cartesian position (x, y, z)
+            error_pos = current_pose[:n_pos] - target[:n_pos]
+            error_rot = current_pose[n_pos:] - target[n_pos:]
+            
+            # Wrap angular error to (−π, π) to prevent discontinuities at ±π do not
+            error_rot = (error_rot + np.pi) % (2 * np.pi) - np.pi
+            
+            return np.sum(error_pos**2) + np.sum(error_rot**2)
+        
+        # Generate starting guesses
         rng = np.random.default_rng()
         guesses = [np.zeros(len(self.joint_vars))]
         for _ in range(n_restarts):
-            guesses.append([rng.uniform(b[0], b[1]) for b in bounds])
+            guesses.append([rng.uniform(b[0], b[1]) for b in self.joint_bounds])
 
+        # Run the optimizer for every guess
         solutions = []
 
         for guess in guesses:
@@ -178,33 +163,35 @@ class RobotKinematics():
                 objective_function,
                 guess,
                 method='SLSQP',
-                bounds=bounds,
-                tol=1e-5,
-                options={'maxiter': 500}   # enough iterations to actually converge
+                bounds=self.joint_bounds,
+                tol=1e-6,
+                options={'maxiter': 500}  
             )
 
-            # Accept any candidate below the error threshold regardless of res.success,
-            # because SLSQP can hit maxiter while still being very close to the solution
-            if res.fun > error_threshold:
-                continue
+            # Evaluate if new solution was found
+            if res.fun < error_threshold:
+                candidate = np.array(res.x)
 
-            candidate = res.x
-
-            # Deduplicate: skip if this configuration is close to one already collected
-            is_duplicate = any(np.allclose(candidate, sol, atol=dedup_tol) for sol in solutions)
-            if not is_duplicate:
-                solutions.append(candidate)
+                # Deduplicate: skip if this configuration is close to one already collected
+                is_duplicate = any(np.allclose(candidate, sol, atol=dedup_tol) for sol in solutions)
+                if not is_duplicate:
+                    solutions.append(candidate)
 
         return [sol.tolist() for sol in solutions]
     
+
+
+
+
+
+
     def jacobian(self, q1, q2, q3, q4, q5):
         """Returns the 5x5 Jacobian matrix at the given joint configuration."""
-        self._check_joint_limits(q1, q2, q3, q4, q5)
-        return self._numeric_jacobian(q1, q2, q3, q4, q5)
-    
-    
+        self._check_joint_limits([q1, q2, q3, q4, q5])
+        return self._numeric_jac(q1, q2, q3, q4, q5)
+      
     def jacobian_inverse(self, current_joint_angles, 
-                            singularity_threshold=0.05, lambda_max=0.1):
+                            singularity_threshold=0.1, lambda_max=0.1):
         """
         Computes joint angle velocities from a task-space desired velocity using the
         Damped Least Squares (DLS) pseudo-inverse of the Jacobian (and prevent singularities).
@@ -215,7 +202,7 @@ class RobotKinematics():
         Based on Nakamura–Hanafusa variable damping rule.
         """
         # Compute Jacobian at current configuration — unpack array into 5 positional args
-        J = self._numeric_jacobian(*current_joint_angles)
+        J = self._numeric_jac(*current_joint_angles)
 
         # Compute SVD decompositionof the Jacobian
         U, singular_values, Vt = np.linalg.svd(J)
@@ -242,25 +229,3 @@ class RobotKinematics():
 
         return inverse_jacobian, is_singular
 
-    
-
-    
-
-    def compute_workspace(self):
-        """Computes the xyz coordinates for a range of joint angles."""
-        resolution = 17  # Number of points per joint
-        
-        t1_space = np.linspace(*self.joint_bounds['t1'], resolution)
-        t2_space = np.linspace(*self.joint_bounds['t2'], resolution)
-        t3_space = np.linspace(*self.joint_bounds['t3'], resolution)
-        t4_space = np.linspace(*self.joint_bounds['t4'], resolution)
-        t5_space = np.linspace(*self.joint_bounds['t5'], resolution)
-
-        # Create a grid of all joint combinations
-        t1, t2, t3, t4, t5 = np.meshgrid(t1_space, t2_space, t3_space, t4_space, t5_space, indexing='ij')
-        
-        # Flatten for calculation and extract x, y, z (first 3 of the 5-element FK output)
-        result = self.forward_kinematics(t1.flatten(), t2.flatten(), t3.flatten(), t4.flatten(), t5.flatten())
-        x, y, z = result[0], result[1], result[2]
-        
-        return x, y, z

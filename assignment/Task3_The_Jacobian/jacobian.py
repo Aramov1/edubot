@@ -14,7 +14,7 @@ def main():
     robot = RobotKinematics()
 
     # Print symbolic Jacobian matrix
-    symbolic_jacobian = robot._symbolic_jacobian
+    symbolic_jacobian = robot._symbolic_jac
     print("Symbolic Jacobian Matrix:")
     #sp.pprint(symbolic_jacobian)
 

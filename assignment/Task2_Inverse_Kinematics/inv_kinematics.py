@@ -1,26 +1,34 @@
-import sys
 import os
-_ASSIGNMENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_PROJECT_ROOT   = os.path.dirname(_ASSIGNMENT_DIR)
-sys.path.insert(0, _ASSIGNMENT_DIR)
-sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'ros_ws', 'src', 'assignment'))
+import sys
+_ASSIGNMENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  
+_PROJECT_ROOT   = os.path.dirname(_ASSIGNMENT_DIR)                             
+sys.path.insert(0, _ASSIGNMENT_DIR)                                            
+sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'ros_ws', 'src', 'assignment', 'assignment'))
 
-import subprocess
+import rclpy
 import time
 import numpy as np
-import rclpy
-from rclpy.node import Node
-from robot_kinematics import RobotKinematics
-from assignment.joint_state_setter import JointStateSetter
-from assignment.read_ee_position import EEPositionReader
 
+# Updated Dependencies
+from set_joint_conf import SetJointConf
+from read_ee_cart import ReadEECart
+from robot_kinematics import RobotKinematics
 
 def main():
-    # Create instance of RobotKinematics to access FK and IK methods
-    robot = RobotKinematics()
 
-    # Define EE pose targets: [x, y, z, pitch, roll, yaw]
-    EE_pose_targets = [
+    robot = RobotKinematics()
+    
+    # Initialize Nodes
+    rclpy.init()
+    setter = SetJointConf()
+    reader = ReadEECart()
+
+    while rclpy.ok() and not reader.tf_found:
+        rclpy.spin_once(reader, timeout_sec=0.5)
+        rclpy.spin_once(setter, timeout_sec=0.0)
+
+    # Test points: [x, y, z, rot_X, rot_y, rot_z]
+    ee_pose_to_test = [
         [0.2, 0.2, 0.2, 0.0, 1.57, 0.650],
         [0.2, 0.1, 0.4, 0.0, 0.0, -1.57],
         [0.0, 0.0, 0.45, 0.0, -0.785, 1.57],
@@ -28,106 +36,57 @@ def main():
         [0.0, 0.0452, 0.45, -0.785, 0.0, 3.141],
     ]
 
-    # Ensure robot_state_publisher is running; auto-launch (no GUI) if missing.
-    # robot_state_publisher should be running in order to be able to read EE pose from RVIZ
-    rsp_proc = None
+    print(f"\n{'='*65}\n INVERSE KINEMATICS VALIDATION\n{'='*65}")
+
     try:
-        result = subprocess.run(['ros2', 'node', 'list'], capture_output=True, text=True, timeout=5)
-        running_nodes = result.stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        running_nodes = ''
+        for ee_pose in ee_pose_to_test:
+            print(f"\nTesting EE POSE: POS (m) x={ee_pose[0]:.3f} y={ee_pose[1]:.3f} z={ee_pose[2]:.3f} "
+                  f"ROT (rad): rot_x={ee_pose[3]:.2f} rot_y={ee_pose[4]:.2f} rot_z={ee_pose[5]:.2f}")
+            
+            # Find all IK solutions
+            solutions = robot.inverse_kinematics(ee_pose)
 
-    if 'robot_state_publisher' not in running_nodes:
-        print("[INFO] robot_state_publisher not running — launching it now...")
-        rsp_proc = subprocess.Popen(
-            ['ros2', 'launch', 'lerobot', 'rviz.launch.py', 'use_rviz:=false'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        # Wait up to 10 s for the node to appear
-        for _ in range(20):
-            time.sleep(0.5)
-            try:
-                r = subprocess.run(['ros2', 'node', 'list'],
-                                   capture_output=True, text=True, timeout=5)
-                if 'robot_state_publisher' in r.stdout:
-                    break
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                pass
-        else:
-            print("[ERROR] robot_state_publisher did not start in 10 s.")
-            print("        Run manually: ros2 launch lerobot rviz.launch.py")
-
-        print("[OK] robot_state_publisher is running.\n")
-    else:
-        print("[OK] robot_state_publisher is running.\n")
+            if not solutions:
+                print("  [!!] No IK solutions found for this target.")
+                continue
 
 
-    # Initiate setter and reader ros2 nodes
-    rclpy.init()
-    node = Node('inv_kinematics_checker')
-    setter = JointStateSetter(node)
-    reader = EEPositionReader(node)
-
-    # Warm up: spin to receive tf_static (fixed joints publish once at startup).
-    print("Waiting for TF tree... ", end='', flush=True)
-    for _ in range(30):
-        rclpy.spin_once(node, timeout_sec=0.1)
-    print("done.\n")
-
-    # Evaluate IK for a set of target EE poses
-    print("--- Inverse Kinematics ---")
-    for target in EE_pose_targets:
-        solutions = robot.inverse_kinematics(target)
-
-        tx, ty, tz = target[0], target[1], target[2]
-        pitch, roll, yaw = target[3], target[4], target[5]
-
-        print(f"\n================================================================")
-        print(f"[Test Target EE Position]    : "
-              f"x={tx:.4f} m  y={ty:.4f} m z={tz:.4f}  m "
-              f"pitch={pitch:.4f} rad  roll={roll:.4f} rad  yaw={yaw:.4f} rad")
-
-        if not solutions:
-            print(f"[No IK solution found]")
-            print(f"================================================================\n")
-            continue
-
-        for i, sol in enumerate(solutions, start=1):
-            # Set joint angles in RViz (append gripper=0)
-            setter.set([*sol, 0.0])
-
-            # Read EE pose from TF: [x, y, z, pitch, roll, yaw] — all angles in radians
-            rviz_pose = reader.read()
-
-            # Print numerical inv kinematics solution
-            sol_rounded = [round(a, 4) for a in sol]
-            print(f"\n[Computed Joint Angles ][{i}]: {sol_rounded}")
-
-            # Print RVIZ EE pose for the joint configuration computed and compute errors
-            if rviz_pose is not None:
-                rx, ry, rz = rviz_pose[0], rviz_pose[1], rviz_pose[2]
-                dist = np.sqrt((tx - rx)**2 + (ty - ry)**2 + (tz - rz)**2)
+            for i, sol in enumerate(solutions, start=1):
+                # Publish joint command in ROS/RViz 
+                setter.update_target([*sol, 0.0])
                 
-                pitch_err = abs(pitch - rviz_pose[3])
-                roll_err  = abs(roll  - rviz_pose[4])
-                yaw_err   = abs(yaw   - rviz_pose[5])
+                # # Fire the setter's 10 Hz timer so the command is published
+                rclpy.spin_once(setter, timeout_sec=0.15)
 
-                print(f"[RViz End-Effector Pose][{i}]: "
-                      f"x={rx:.4f} m  y={ry:.4f} m  z={rz:.4f} m "
-                      f"pitch={rviz_pose[3]:.4f} rad  roll={rviz_pose[4]:.4f} rad  yaw={rviz_pose[5]:.4f} rad")
-                print(f"[Error                 ][{i}]: "
-                      f"Dist={dist*100:.4f} cm  pitch_err={pitch_err:.4f} rad  "
-                      f"roll_err={roll_err:.4f} rad  yaw_err={yaw_err:.4f} rad")
-            else:
-                print(f"[RViz End-Effector Pose][{i}]: [TF lookup failed]")
+                # Wait foe tf pipeline to complete
+                time.sleep(0.1)
 
-        print(f"================================================================\n")
+                # # Drain ALL pending /tf callbacks with non-blocking calls.
+                for _ in range(500):
+                    rclpy.spin_once(reader, timeout_sec=0.0)    
 
-    node.destroy_node()
-    rclpy.shutdown()
-    if rsp_proc is not None:
-        rsp_proc.terminate()
+                # Read EE pose using from TF Tree
+                rviz_pose = reader.get_ee_pose()
 
+                if rviz_pose:
+                    # Calculate errors
+                    error_pos = np.linalg.norm(np.array(ee_pose[:3]) - np.array(rviz_pose[:3]))
+                    error_rot = np.minimum(abs(np.array(ee_pose[3:]) - np.array(rviz_pose[3:])), abs(np.array(rviz_pose[3:]) - np.array(ee_pose[3:])))
+
+                    print(f"  Sol:     {i}: {np.round(sol, 3)}")
+                    print(f"  RVIZ:    POS (m): x={rviz_pose[0]:.3f}, y={rviz_pose[1]:.3f}, z={rviz_pose[2]:.3f}  ROT (rad): rot_x={rviz_pose[3]:.3f}, rot_y={rviz_pose[4]:.3f}, rot_z={rviz_pose[5]:.3f}")
+                    print(f"  ERROR:   POS (cm): {error_pos*100:.5f}  ROT (rad): rot_x={error_rot[0]:.3f}, rot_y={error_rot[1]:.3f}, rot_z={error_rot[2]:.3f}\n")
+                else:
+                    print(f"  Sol {i}: TF lookup failed during test.\n ")
+            
+            print("-" * 65)
+
+    except KeyboardInterrupt:
+        pass
+    finally:
+        setter.destroy_node()
+        reader.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == "__main__":
     main()

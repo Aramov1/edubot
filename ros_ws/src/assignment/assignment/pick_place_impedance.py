@@ -475,7 +475,7 @@ class PickPlaceImpedanceNode(Node):
         arm_q = self._current_q[:5]
         x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
         # Hold current EE pose while closing
-        self._run_impedance_step(x_cur, lambda _: None, hold_arm=True)
+        self._run_impedance_step(x_cur, lambda _: 0.0, hold_arm=True)
 
         gripper_vel = self._gripper.command_close(self._current_q[5])
         self._publish_velocity(np.zeros(5), gripper_vel)
@@ -533,7 +533,7 @@ class PickPlaceImpedanceNode(Node):
         # Hold arm in place while opening
         arm_q = self._current_q[:5]
         x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
-        self._run_impedance_step(x_cur, lambda _: None, hold_arm=True)
+        self._run_impedance_step(x_cur, lambda _: 0.0, hold_arm=True)
 
         gripper_vel = self._gripper.command_open(self._current_q[5])
         self._publish_velocity(np.zeros(5), gripper_vel)
@@ -713,7 +713,7 @@ class PickPlaceImpedanceNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.joint_names = JOINT_NAMES
         point = JointTrajectoryPoint()
-        point.velocities = list(q_dot_safe) + [gripper_vel]
+        point.velocities = [float(v) for v in q_dot_safe] + [float(gripper_vel)]
         msg.points = [point]
         self._pub.publish(msg)
 
