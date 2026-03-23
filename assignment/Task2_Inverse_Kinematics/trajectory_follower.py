@@ -32,11 +32,11 @@ class BaseTrajectoryFollower(Node):
         """Helper to map a 2D local shape onto the correct 3D plane based on normal_axis."""
         cx, cy, cz = self.center
         if self.normal_axis == 'z':
-            return [cx + x_2d, cy + y_2d, cz]
+            return [cx + x_2d, cy + y_2d, cz, np.pi, 0.0]
         elif self.normal_axis == 'y':
-            return [cx + x_2d, cy, cz + y_2d]
+            return [cx + x_2d, cy, cz + y_2d, np.pi, 0.0]
         elif self.normal_axis == 'x':
-            return [cx, cy + x_2d, cz + y_2d]
+            return [cx, cy + x_2d, cz + y_2d, np.pi, 0.0]
         else:
             raise ValueError("normal_axis must be 'x', 'y', or 'z'")
 
@@ -184,7 +184,7 @@ def main():
     #)
     
     follower = TriangleTrajectoryFollower(
-        center=(0.2, 0.2, 0.2), 
+        center=(0.1, 0.2, 0), 
         side_length=0.15, 
         normal_axis='z', 
         num_points=60  # Using a multiple of 3 is best for triangles

@@ -164,7 +164,7 @@ class RobotKinematics():
                 guess,
                 method='SLSQP',
                 bounds=self.joint_bounds,
-                tol=1e-6,
+                tol=1e-8,
                 options={'maxiter': 500}  
             )
 
@@ -178,11 +178,6 @@ class RobotKinematics():
                     solutions.append(candidate)
 
         return [sol.tolist() for sol in solutions]
-    
-
-
-
-
 
 
     def jacobian(self, q1, q2, q3, q4, q5):
