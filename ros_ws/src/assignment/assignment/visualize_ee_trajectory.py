@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import rclpy
 from rclpy.node import Node
@@ -20,6 +21,10 @@ class VisualizeEETrajectory(Node):
     def __init__(self):
         super().__init__('visualize_ee_trajectory')
 
+        # Distance threshold (in meters) to detect a jump and reset the line.
+        # 0.001 means if the EE moves more than 1 cm in one reading, it breaks the line.
+        self.jump_threshold = 0.05 
+
         # QoS profile for marker publishing
         qos_marker = QoSProfile(
             depth=10,
@@ -28,7 +33,7 @@ class VisualizeEETrajectory(Node):
             history=HistoryPolicy.KEEP_LAST,
         )
 
-        # QoS profile for subscribing to ee_pose (must match publish_ee_pose default QoS)
+        # QoS profile for subscribing to ee_pose
         qos_sub = QoSProfile(
             depth=10,
             durability=DurabilityPolicy.VOLATILE,
@@ -57,14 +62,27 @@ class VisualizeEETrajectory(Node):
         self.get_logger().info('Visualizing EE trajectory. Publish marker to /ee_trajectory_marker')
 
     def ee_pose_callback(self, msg: PoseStamped):
-        """Receive EE pose and accumulate trajectory points."""
-        point = Point()
-        point.x = msg.pose.position.x
-        point.y = msg.pose.position.y
-        point.z = msg.pose.position.z
+        """Receive EE pose, check for jumps, and accumulate trajectory points."""
+        new_point = Point()
+        new_point.x = msg.pose.position.x
+        new_point.y = msg.pose.position.y
+        new_point.z = msg.pose.position.z
         
-        self.trajectory_points.append(point)
-        #self.get_logger().info(f"EE Pose received: ({point.x:.3f}, {point.y:.3f}, {point.z:.3f}). Total points: {len(self.trajectory_points)}")
+        # Check distance if we already have points
+        if len(self.trajectory_points) > 0:
+            last_point = self.trajectory_points[-1]
+            distance = math.sqrt(
+                (new_point.x - last_point.x)**2 +
+                (new_point.y - last_point.y)**2 +
+                (new_point.z - last_point.z)**2
+            )
+            
+            # If the distance is larger than our threshold, clear the line!
+            if distance > self.jump_threshold:
+                self.get_logger().info(f"Jump detected ({distance:.3f}m > {self.jump_threshold}m). Resetting trajectory drawing.")
+                self.trajectory_points.clear()
+        
+        self.trajectory_points.append(new_point)
 
     def publish_trajectory_marker(self):
         """Publish trajectory as a LINE_STRIP marker."""
@@ -95,12 +113,11 @@ class VisualizeEETrajectory(Node):
         marker.lifetime.nanosec = 0
 
         self._marker_pub.publish(marker)
-        # self.get_logger().info(f"Published trajectory marker with {len(self.trajectory_points)} points")
 
     def reset_trajectory(self):
         """Reset the accumulated trajectory."""
-        self.trajectory_points = []
-        self.get_logger().info('Trajectory reset')
+        self.trajectory_points.clear()
+        self.get_logger().info('Trajectory reset manually')
 
 
 def main(args=None):
