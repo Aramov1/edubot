@@ -1,17 +1,16 @@
 import sys
 import os
-import numpy as np
-import rclpy
-from rclpy.node import Node
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-
-# Adjust these paths as per your workspace
 _ASSIGNMENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PROJECT_ROOT   = os.path.dirname(_ASSIGNMENT_DIR)
 sys.path.insert(0, _ASSIGNMENT_DIR)
 sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'ros_ws', 'src', 'assignmet'))
 
+import numpy as np
+import rclpy
+from rclpy.node import Node
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from robot_kinematics import RobotKinematics
+
 
 class BaseTrajectoryFollower(Node):
     """Base class for trajectory generation and execution."""
@@ -201,9 +200,9 @@ def main():
         rclpy.spin(follower)
     except KeyboardInterrupt:
         pass
-    
-    follower.destroy_node()
-    rclpy.shutdown()
+    finally:
+        follower.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

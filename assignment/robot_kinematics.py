@@ -1,7 +1,10 @@
+import warnings
 import numpy as np
 import sympy as sp
 from sympy.utilities.lambdify import lambdify
 from scipy.optimize import minimize
+
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="scipy")
 
 # Limited Joint Conf
 JOINT_CONFIG_LIMITS = {
@@ -136,6 +139,8 @@ class RobotKinematics():
         """
 
         def objective_function(q):
+            # Clip to bounds: numerical differentiation can perturb q slightly outside limits
+            q = np.clip(q, [b[0] for b in self.joint_bounds], [b[1] for b in self.joint_bounds])
             # Only compare the DOF provided in the target (e.g., first 3 for fix position)
             target = np.array(target_pose)
             current_pose = self.forward_kinematics(q)[:len(target)]
@@ -180,11 +185,12 @@ class RobotKinematics():
         return [sol.tolist() for sol in solutions]
 
 
-    def jacobian(self, q1, q2, q3, q4, q5):
+    def jacobian(self, joints):
         """Returns the 5x5 Jacobian matrix at the given joint configuration."""
-        self._check_joint_limits([q1, q2, q3, q4, q5])
-        return self._numeric_jac(q1, q2, q3, q4, q5)
-      
+        self._check_joint_limits(joints)
+        # squeeze: scalar (6,1)→(6,) | vectorized (6,1,N)→(6,N)
+        return np.squeeze(np.array(self._numeric_jac(*joints)))
+    
     def jacobian_inverse(self, current_joint_angles, 
                             singularity_threshold=0.1, lambda_max=0.1):
         """
@@ -197,10 +203,10 @@ class RobotKinematics():
         Based on Nakamura–Hanafusa variable damping rule.
         """
         # Compute Jacobian at current configuration — unpack array into 5 positional args
-        J = self._numeric_jac(*current_joint_angles)
+        J = self.jacobian(current_joint_angles)
 
         # Compute SVD decompositionof the Jacobian
-        U, singular_values, Vt = np.linalg.svd(J)
+        U, singular_values, Vt = np.linalg.svd(J, full_matrices=False)
 
         # Singularity analysis - High confition values/low eigen values indicate proximity to a singularity.
         sigma_min = singular_values[-1]
@@ -217,10 +223,9 @@ class RobotKinematics():
         damped_inv_sigmas = singular_values / (singular_values**2 + lambda_sq)
 
         # Compute target joint velocities.
-        # J is (6x5): U is (6x6), S is (5,), Vt is (5x5).
-        # Pseudo-inverse: V @ diag(1/σ) @ Ur.T  where Ur = U[:, :5] — the range subspace.
-        Ur = U[:, :len(singular_values)]
-        inverse_jacobian = Vt.T @ np.diag(damped_inv_sigmas) @ Ur.T
+        inverse_jacobian = Vt.T @ np.diag(damped_inv_sigmas) @ U.T
 
         return inverse_jacobian, is_singular
+    
+
 

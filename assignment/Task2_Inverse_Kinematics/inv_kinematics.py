@@ -5,6 +5,7 @@ _PROJECT_ROOT   = os.path.dirname(_ASSIGNMENT_DIR)
 sys.path.insert(0, _ASSIGNMENT_DIR)                                            
 sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'ros_ws', 'src', 'assignment', 'assignment'))
 
+import subprocess
 import rclpy
 import time
 import numpy as np
@@ -15,9 +16,13 @@ from read_ee_cart import ReadEECart
 from robot_kinematics import RobotKinematics
 
 def main():
-
+ 
     robot = RobotKinematics()
     
+    # Kill any existing ROS2 processes and relaunch the simulation
+    subprocess.run(["pkill", "-9", "-f", "ros2"], check=False)
+    time.sleep(1)
+ 
     # Initialize Nodes
     rclpy.init()
     setter = SetJointConf()
@@ -90,3 +95,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
