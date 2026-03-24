@@ -92,6 +92,144 @@ class State(Enum):
 
 
 # ---------------------------------------------------------------------------
+# Trajectory follower
+# ---------------------------------------------------------------------------
+class BaseTrajectoryFollower(Node):
+    """Base class for trajectory generation and execution."""
+    def __init__(self, node_name, center, normal_axis='z', num_points=20):
+        super().__init__(node_name)
+        self.robot = RobotKinematics()
+        self._joint_cmd_pub = self.create_publisher(JointTrajectory, 'joint_cmds', 10)
+        
+        self.center = center
+        self.normal_axis = normal_axis
+        self.num_points = num_points
+        
+    def generate_trajectory(self):
+        """Must be implemented by subclasses."""
+        raise NotImplementedError("Subclasses must implement generate_trajectory()")
+        
+    def map_2d_to_3d(self, x_2d, y_2d):
+        """Helper to map a 2D local shape onto the correct 3D plane based on normal_axis."""
+        cx, cy, cz = self.center
+        if self.normal_axis == 'z':
+            return [cx + x_2d, cy + y_2d, cz, np.pi, 0.0]
+        elif self.normal_axis == 'y':
+            return [cx + x_2d, cy, cz + y_2d, np.pi, 0.0]
+        elif self.normal_axis == 'x':
+            return [cx, cy + x_2d, cz + y_2d, np.pi, 0.0]
+        else:
+            raise ValueError("normal_axis must be 'x', 'y', or 'z'")
+
+    def trajectory_to_pose(self, trajectory):
+        return [point['target_pose'] for point in trajectory]
+    
+    def joint_angles_calculation(self, poses):
+        joint_trajectory = []
+        for pose in poses:
+            solutions = self.robot.inverse_kinematics(pose, n_restarts=30)
+            if solutions:
+                joint_trajectory.append(solutions[0])  # Take the first solution
+            else:
+                joint_trajectory.append(None)  # No solution found
+        return joint_trajectory
+    
+    def execute_trajectory(self, joint_trajectory, trajectory_time=10.0):
+        self.joint_angles_trajectory = [j for j in joint_trajectory if j is not None]
+        
+        if not self.joint_angles_trajectory:
+            print("No valid joint configurations to execute!")
+            return
+        
+        self.time_per_point = trajectory_time / len(self.joint_angles_trajectory)
+        self.current_point_idx = 0
+        
+        print(f"Executing {len(self.joint_angles_trajectory)} points. Look at RViz!")
+        self.timer = self.create_timer(self.time_per_point, self.timer_callback)
+
+    def timer_callback(self):
+        if self.current_point_idx >= len(self.joint_angles_trajectory):
+            self.timer.cancel()
+            print("Trajectory execution completed!")
+            return
+        
+        joint_angles = self.joint_angles_trajectory[self.current_point_idx]
+        joint_angles_with_gripper = np.append(joint_angles, 0.0)
+        
+        traj_msg = JointTrajectory()
+        traj_msg.joint_names = self.robot.joint_names
+        
+        point = JointTrajectoryPoint()
+        point.positions = list(joint_angles_with_gripper)
+        point.time_from_start = rclpy.time.Duration(seconds=0.0).to_msg()
+        
+        traj_msg.points.append(point)
+        self._joint_cmd_pub.publish(traj_msg)
+        
+        self.current_point_idx += 1
+
+# ---------------------------------------------------------------------------
+# Trajectory definition - Elipse
+# ---------------------------------------------------------------------------
+
+import numpy as np
+
+class HalfEllipseTrajectory(BaseTrajectoryFollower):
+    def __init__(self, p1, p2, p3, segment, center, normal_axis='z', num_points=20):
+        """
+        p1: First extreme point (local 2D)
+        p2: Upper peak point (local 2D)
+        p3: Second extreme point (local 2D)
+        segment: Choice of trajectory (1, 2, 3, or 4)
+        """
+        super().__init__('half_ellipse_trajectory_follower', center=center, normal_axis=normal_axis, num_points=num_points)
+        self.p1 = np.array(p1)
+        self.p2 = np.array(p2)
+        self.p3 = np.array(p3)
+        self.segment = segment
+
+        # The local 2D center is the midpoint between the two extremes
+        self.local_center = (self.p1 + self.p3) / 2.0
+        
+    def generate_trajectory(self):
+        traj1, traj2, traj3, traj4 = [], [], [], []
+        
+        # Vectors defining the ellipse axes in 2D
+        u = self.p3 - self.local_center  # Vector corresponding to t = 0
+        v = self.p2 - self.local_center  # Vector corresponding to t = pi/2
+        
+        # Helper function to generate a segment based on a range of t
+        def create_segment(start_t, end_t):
+            segment_list = []
+            t_values = np.linspace(start_t, end_t, self.num_points)
+            for t in t_values:
+                point_2d = self.local_center + u * np.cos(t) + v * np.sin(t)
+                target_pose = self.map_2d_to_3d(point_2d[0], point_2d[1])
+                segment_list.append({'target_pose': target_pose, 'parameter': t})
+            return segment_list
+
+        # Forward Trajectories
+        traj1 = create_segment(np.pi, np.pi/2)  # P1 -> P2
+        traj2 = create_segment(np.pi/2, 0)      # P2 -> P3
+        
+        # Inverse Trajectories
+        traj3 = create_segment(0, np.pi/2)      # P3 -> P2
+        traj4 = create_segment(np.pi/2, np.pi)  # P2 -> P1
+            
+        # Returns the requested trajectory segment
+        segments = {
+            1: traj1,
+            2: traj2,
+            3: traj3,
+            4: traj4
+        }
+        
+        if self.segment in segments:
+            return segments[self.segment]
+        else:
+            raise ValueError("Segment must be 1, 2, 3, or 4")
+        
+# ---------------------------------------------------------------------------
 # ImpedanceController — Cartesian proportional velocity with directional gains
 # ---------------------------------------------------------------------------
 
@@ -411,7 +549,7 @@ class PickPlaceImpedanceNode(Node):
         q_raw = np.array([name_to_pos.get(n, 0.0) for n in JOINT_NAMES])
 
         # Clamp arm joints [0:5] to their allowed ranges; leave gripper [5] unclamped
-        bounds = list(self._robot.joint_bounds.values())
+        bounds = list(self._robot.joint_bounds.values()) if hasattr(self._robot.joint_bounds, 'values') else list(self._robot.joint_bounds)
         arm_q_clamped = np.array([
             np.clip(q_raw[i], bounds[i][0], bounds[i][1]) for i in range(5)
         ])
@@ -434,7 +572,7 @@ class PickPlaceImpedanceNode(Node):
         """Drive all arm joints to the home configuration."""
         # Compute FK at home angles to get the home EE pose
         home_pose = np.array(
-            self._robot.forward_kinematics(*self._home_q)
+            self._robot.forward_kinematics(self._home_q)
         ).flatten()
 
         err = self._run_impedance_step(home_pose, self._gripper.command_open)
@@ -444,15 +582,33 @@ class PickPlaceImpedanceNode(Node):
 
     def _state_approach_object(self) -> None:
         """Move EE to approach height above the pick location."""
-        target = np.array([
-            self._loc_pick[0], self._loc_pick[1], self._approach_z
-        ])
-        target_pose = self._make_translation_pose(target)
+        # PREVIOUS CODE
+        # target = np.array([
+        #     self._loc_pick[0], self._loc_pick[1], self._approach_z
+        # ])
+        # target_pose = self._make_translation_pose(target)
 
-        err = self._run_impedance_step(target_pose, self._gripper.command_open)
-        if err < self._thresh_approach:
-            self.get_logger().info('APPROACH_OBJECT reached.')
-            self._transition_to(State.DESCEND_TO_OBJECT)
+        # err = self._run_impedance_step(target_pose, self._gripper.command_open)
+        # if err < self._thresh_approach:
+        #     self.get_logger().info('APPROACH_OBJECT reached.')
+        #     self._transition_to(State.DESCEND_TO_OBJECT)
+
+        follower = HalfEllipseTrajectory(
+            p1=[0.0, 0.0],
+            p2=[self._loc_pick[1], self._approach_z],
+            p3=[self._loc_place[1], self._approach_z],
+            segment=4,
+            normal_axis='z',
+            num_points=20,
+            center=(0.0, 0.0, 0.0),
+        )
+    
+        trajectory = follower.generate_trajectory()
+        poses = follower.trajectory_to_pose(trajectory)  
+        joint_trajectory = follower.joint_angles_calculation(poses)
+        
+        # Execute the trajectory (will update robot position in RViz)
+        follower.execute_trajectory(joint_trajectory, trajectory_time=7.0)
 
     def _state_descend_to_object(self) -> None:
         """Lower EE to the pick location. Soft Z gain provides gentle descent."""
@@ -473,7 +629,7 @@ class PickPlaceImpedanceNode(Node):
     def _state_grasp(self) -> None:
         """Close the gripper and dwell to secure the object."""
         arm_q = self._current_q[:5]
-        x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
+        x_cur = np.array(self._robot.forward_kinematics(arm_q)).flatten()
         # Hold current EE pose while closing
         self._run_impedance_step(x_cur, lambda _: None, hold_arm=True)
 
@@ -504,15 +660,51 @@ class PickPlaceImpedanceNode(Node):
 
     def _state_move_to_target(self) -> None:
         """Move EE to approach height above the place location."""
-        target = np.array([
-            self._loc_place[0], self._loc_place[1], self._approach_z
-        ])
-        target_pose = self._make_translation_pose(target)
+        # target = np.array([
+        #     self._loc_place[0], self._loc_place[1], self._approach_z
+        # ])
+        # target_pose = self._make_translation_pose(target)
 
-        err = self._run_impedance_step(target_pose, self._gripper.command_hold)
-        if err < self._thresh_approach:
-            self.get_logger().info('MOVE_TO_TARGET reached.')
-            self._transition_to(State.DESCEND_TO_PLACE)
+        # err = self._run_impedance_step(target_pose, self._gripper.command_hold)
+        # if err < self._thresh_approach:
+        #     self.get_logger().info('MOVE_TO_TARGET reached.')
+        #     self._transition_to(State.DESCEND_TO_PLACE)
+        
+        # Movement from pick to home
+        follower = HalfEllipseTrajectory(
+            p1=[0.0, 0.0],
+            p2=[self._loc_pick[1], self._approach_z],
+            p3=[self._loc_place[1], self._approach_z],
+            segment=1,
+            normal_axis='z',
+            num_points=20,
+            center=(0.0, 0.0, 0.0),
+        )
+    
+        trajectory = follower.generate_trajectory()
+        poses = follower.trajectory_to_pose(trajectory)  
+        joint_trajectory = follower.joint_angles_calculation(poses)
+        
+        # Execute the trajectory (will update robot position in RViz)
+        follower.execute_trajectory(joint_trajectory, trajectory_time=7.0)
+
+        # Movement from home to place
+        follower = HalfEllipseTrajectory(
+            p1=[0.0, 0.0],
+            p2=[self._loc_pick[1], self._approach_z],
+            p3=[self._loc_place[1], self._approach_z],
+            segment=2,
+            normal_axis='z',
+            num_points=20,
+            center=(0.0, 0.0, 0.0),
+        )
+    
+        trajectory = follower.generate_trajectory()
+        poses = follower.trajectory_to_pose(trajectory)  
+        joint_trajectory = follower.joint_angles_calculation(poses)
+        
+        # Execute the trajectory (will update robot position in RViz)
+        follower.execute_trajectory(joint_trajectory, trajectory_time=7.0)
 
     def _state_descend_to_place(self) -> None:
         """Lower EE to the place location."""
@@ -532,7 +724,7 @@ class PickPlaceImpedanceNode(Node):
         """Open the gripper and dwell before lifting."""
         # Hold arm in place while opening
         arm_q = self._current_q[:5]
-        x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
+        x_cur = np.array(self._robot.forward_kinematics(arm_q)).flatten()
         self._run_impedance_step(x_cur, lambda _: None, hold_arm=True)
 
         gripper_vel = self._gripper.command_open(self._current_q[5])
@@ -561,14 +753,31 @@ class PickPlaceImpedanceNode(Node):
 
     def _state_return_home(self) -> None:
         """Return to home configuration before next cycle or finishing."""
-        home_pose = np.array(
-            self._robot.forward_kinematics(*self._home_q)
-        ).flatten()
+        # home_pose = np.array(
+        #     self._robot.forward_kinematics(*self._home_q)
+        # ).flatten()
 
-        err = self._run_impedance_step(home_pose, self._gripper.command_open)
-        if err < self._thresh_home:
-            self.get_logger().info('RETURN_HOME reached.')
-            self._transition_to(State.SWAP_LOCATIONS)
+        # err = self._run_impedance_step(home_pose, self._gripper.command_open)
+        # if err < self._thresh_home:
+        #     self.get_logger().info('RETURN_HOME reached.')
+        #     self._transition_to(State.SWAP_LOCATIONS)
+
+        follower = HalfEllipseTrajectory(
+            p1=[0.0, 0.0],
+            p2=[self._loc_pick[1], self._approach_z],
+            p3=[self._loc_place[1], self._approach_z],
+            segment=3,
+            normal_axis='z',
+            num_points=20,
+            center=(0.0, 0.0, 0.0),
+        )
+    
+        trajectory = follower.generate_trajectory()
+        poses = follower.trajectory_to_pose(trajectory)  
+        joint_trajectory = follower.joint_angles_calculation(poses)
+        
+        # Execute the trajectory (will update robot position in RViz)
+        follower.execute_trajectory(joint_trajectory, trajectory_time=7.0)
 
     def _state_swap_locations(self) -> None:
         """Swap pick/place locations and advance cycle counter.  No motion required."""
@@ -605,7 +814,7 @@ class PickPlaceImpedanceNode(Node):
         This is used for APPROACH, DESCEND, LIFT, and MOVE states.
         """
         arm_q = self._current_q[:5]
-        x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
+        x_cur = np.array(self._robot.forward_kinematics(arm_q)).flatten()
         target = np.copy(x_cur)
         target[:3] = xyz              # override XYZ, leave orientation unchanged
         return target
@@ -628,7 +837,7 @@ class PickPlaceImpedanceNode(Node):
             Position error norm (XYZ only) in metres.
         """
         arm_q = self._current_q[:5]
-        x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
+        x_cur = np.array(self._robot.forward_kinematics(arm_q)).flatten()
 
         # Update finite-difference EE velocity estimate
         dx = self._update_dx_cur(x_cur)
@@ -657,7 +866,7 @@ class PickPlaceImpedanceNode(Node):
     def _position_error(self, target_xyz: np.ndarray) -> float:
         """Euclidean XYZ distance between current EE and target."""
         arm_q = self._current_q[:5]
-        x_cur = np.array(self._robot.forward_kinematics(*arm_q)).flatten()
+        x_cur = np.array(self._robot.forward_kinematics(arm_q)).flatten()
         return float(np.linalg.norm(target_xyz - x_cur[:3]))
 
     def _update_dx_cur(self, x_cur: np.ndarray) -> np.ndarray:
@@ -697,7 +906,7 @@ class PickPlaceImpedanceNode(Node):
             if q[i] <= lower[i] and dq[i] < 0 → dq[i] = 0  (would go lower)
         """
         q_dot_safe = q_dot.copy()
-        bounds = list(self._robot.joint_bounds.values())
+        bounds = list(self._robot.joint_bounds.values()) if hasattr(self._robot.joint_bounds, 'values') else list(self._robot.joint_bounds)
         for i in range(5):
             lo, hi = bounds[i]
             if self._current_q[i] >= hi and q_dot_safe[i] > 0.0:

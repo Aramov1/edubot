@@ -163,6 +163,55 @@ class TriangleTrajectoryFollower(BaseTrajectoryFollower):
                 target_pose = self.map_2d_to_3d(x_2d, y_2d)
                 trajectory.append({'target_pose': target_pose})
         return trajectory
+    
+
+class HalfEllipseTrajectory(BaseTrajectoryFollower):
+    def __init__(self, p1, p2, p3, segment, center, normal_axis='z', num_points=20):
+        """
+        center: 3D center point required by BaseTrajectoryFollower
+        p1: First extreme point of the half-ellipse (local 2D coordinates, e.g., [x, y])
+        p2: Upper peak point of the half-ellipse (local 2D coordinates)
+        p3: Second extreme point of the half-ellipse (local 2D coordinates)
+        """
+        super().__init__('half_ellipse_trajectory_follower', center=center, normal_axis=normal_axis, num_points=num_points)
+        self.p1 = np.array(p1)
+        self.p2 = np.array(p2)
+        self.p3 = np.array(p3)
+        self.segment = segment
+
+        # The local 2D center is the midpoint between the two extremes
+        self.local_center = (self.p1 + self.p3) / 2.0
+        
+    def generate_trajectory(self):
+        traj1 = []
+        traj2 = []
+        
+        # Vectors defining the ellipse axes in 2D
+        u = self.p3 - self.local_center  # Vector corresponding to t = 0
+        v = self.p2 - self.local_center  # Vector corresponding to t = pi/2
+        
+        # Trajectory 1: From p1 to p2 (parameter t goes from pi to pi/2)
+        # We use np.linspace to ensure the exact extreme and upper points are hit
+        t1_values = np.linspace(np.pi, np.pi/2, self.num_points)
+        for t in t1_values:
+            point_2d = self.local_center + u * np.cos(t) + v * np.sin(t)
+            target_pose = self.map_2d_to_3d(point_2d[0], point_2d[1])
+            traj1.append({'target_pose': target_pose, 'parameter': t})
+            
+        # Trajectory 2: From p2 to p3 (parameter t goes from pi/2 to 0)
+        t2_values = np.linspace(np.pi/2, 0, self.num_points)
+        for t in t2_values:
+            point_2d = self.local_center + u * np.cos(t) + v * np.sin(t)
+            target_pose = self.map_2d_to_3d(point_2d[0], point_2d[1])
+            traj2.append({'target_pose': target_pose, 'parameter': t})
+            
+        # Returns the requested trajectory (either 1 or 2)
+        if self.segment == 1:
+            return traj1
+        elif self.segment == 2:
+            return traj2
+        else:
+            raise ValueError("Segment must be 1 (p1 to p2) or 2 (p2 to p3)")
 
 
 def main():
@@ -180,13 +229,17 @@ def main():
     # follower = SquareTrajectoryFollower(
     #   center=(0.2, 0.2, 0.2), 
     #   side_length=0.15
-    #)
+    # )
     
-    follower = TriangleTrajectoryFollower(
-        center=(0.1, 0.2, 0), 
-        side_length=0.15, 
-        normal_axis='z', 
-        num_points=60  # Using a multiple of 3 is best for triangles
+
+    follower = HalfEllipseTrajectory(
+        p1=[-0.2, 0.0],
+        p2=[0.0, 0.25],
+        p3=[0.2, 0.0],
+        segment=2,
+        normal_axis='z',
+        num_points=60,
+        center=(0.0, 0.0, 0.1),
     )
     
     trajectory = follower.generate_trajectory()
