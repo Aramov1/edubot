@@ -5,155 +5,190 @@ _PROJECT_ROOT   = os.path.dirname(_ASSIGNMENT_DIR)
 sys.path.insert(0, _ASSIGNMENT_DIR)
 sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'ros_ws', 'src', 'assignment'))
 
-import threading
 import rclpy
 from rclpy.node import Node
 import numpy as np
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from sensor_msgs.msg import JointState
 from rclpy.qos import qos_profile_sensor_data
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+
 from robot_kinematics import RobotKinematics
 
+
 class VelTrajectoryController(Node):
-    def __init__(self, start_pose, offset=0.2, axis='z', gain=0.6, max_joint_vel=0.5):
+    def __init__(self, start_pos, offset=0.2, gain_pos=0.6, gain_rot = 0.3, max_joint_vel=0.5, max_cart_vel = 1):
         super().__init__('vel_trajectory_controller')
         
-        self.robot = RobotKinematics()
-        self.offset = offset
-        self.gain = gain
-        self.max_joint_vel = max_joint_vel
-        self.axis_idx = {'x': 0, 'y': 1, 'z': 2}.get(axis.lower(), 2)
-        self.get_logger().info("Started")
-
-        # Limits
-        bounds = np.array(self.robot.joint_bounds)
-        self.joint_low, self.joint_high = bounds[:, 0], bounds[:, 1]
+        # Trajectory Parameters
+        self.start_pos = start_pos
+        self.start_rot = [-np.pi/2, 0]
+        self.start_pose = [*self.start_pos, *self.start_rot]
+        self.offset     = offset
+        self.axis_idx   = 2 # z composent in fw_kin
         
-        # State
-        self.current_q = None
-        self.start_pose = np.array(start_pose, dtype=float)
+        # Controller Parameters
+        self.gains = [gain_pos] * 3 + [gain_rot] * 2
+        self.max_cart_vel  = max_cart_vel 
+        self.max_joint_vel = max_joint_vel
+        
+        # Robot Kinematics
+        self.robot = RobotKinematics()
+        self.joint_low_bounds  = np.array(self.robot.joint_bounds)[:, 0]
+        self.joint_high_bounds = np.array(self.robot.joint_bounds)[:, 1]
+
+        # Running States :  
+        # Move to Start Position with Elbow Up -> Start Proper Velocity trajectory control
         self.direction = 1
-        self.initialized = False
+        self.current_q = None
+        self.elbow_up_reached = False  
+        self.target_pose = self.start_pose.copy()
 
-        self.target_start_q = None  # unused in velocity mode; kept for reference
+        self.get_logger().info("Velocity Trajectory controller started. ")
 
-        # ROS
+        # Prepare Controler to move to start Position
+        if not self.check_within_workspace():
+            raise RuntimeError("Invalid Workspace Configuration")
+        
+        # ROS Interface
         self._joint_cmd_pub = self.create_publisher(JointTrajectory, 'joint_cmds', 10)
         self._sub = self.create_subscription(JointState, 'joint_states', self._on_joint_states, qos_profile_sensor_data)
-
         self.create_timer(0.04, self.control_loop)
-        # Defer heavy IK computation until after spin() starts so RViz keeps updating
-        self._setup_timer = self.create_timer(0.1, self._setup_once)
 
-    def _setup_once(self):
-        """Fires once after spin() starts, then launches IK in a background thread."""
-        self._setup_timer.cancel()
-        threading.Thread(target=self._run_setup, daemon=True).start()
+    def check_within_workspace(self):
+        """Ensures Robot is able to perform desired trajectory"""
+        def get_offset_ik(dist):
+            p_up, p_down = self.start_pose.copy(), self.start_pose.copy()
+            p_up[self.axis_idx]   += dist
+            p_down[self.axis_idx] -= dist
+            return self.robot.inverse_kinematics(p_up), self.robot.inverse_kinematics(p_down)
+    
+        self.get_logger().info("Checking start target for reachability...")
 
-    def _run_setup(self):
-        """Background thread: validates workspace and computes start IK without blocking spin()."""
-        try:
-            if not self._validate_offset():
-                self.get_logger().error("Robot cannot reach any part of the requested trajectory.")
-                return
+        # Check Start Pose is inside recheable workspace
+        start_confs = self.robot.inverse_kinematics(self.start_pose)
+        if not start_confs:
+            self.get_logger().error("Start Pose unreachable!")
+            return False
+        
+        self.get_logger().info("Start Pose recheable! Checking target offset poses recheability...")
+        
+        # If possible, choose an Elbow Up joint configuration : Prevent floor collision
+        self.start_joint_conf = self.pick_elbow_up_conf(start_confs)
 
-            ik_solutions = self.robot.inverse_kinematics(self.start_pose[:3])
-            if not ik_solutions:
-                self.get_logger().error(f"IK found no solution for start_pose={self.start_pose[:3]}")
-                return
+        # Check Offset Targets are inside recheable workspace
+        conf_up, conf_down = get_offset_ik(self.offset)
+        
+        # Shrink offset until both ends are reachable     
+        if not (conf_up and conf_down):
+            self.get_logger().info(f"Offset too large. Computing minimum feasible offset...")
 
-            self.target_start_q = np.array(ik_solutions[0])
-            self.get_logger().info(f"Setup done. offset={self.offset:.2f} m, target_q={np.round(self.target_start_q, 3)}")
-        except Exception as e:
-            self.get_logger().error(f"Setup failed with exception: {e}")
+        while  not (conf_up and conf_down) and self.offset > 0:
+            self.offset = round(self.offset - 0.02, 3)
+            conf_up, conf_down = get_offset_ik(self.offset)
+        self.offset = round(self.offset - 0.02, 3)
+        self.get_logger().info(f"Target Offset updated: {self.offset}")
 
-    def _validate_offset(self):
-        """Shrinks offset until the oscillation is within reach."""
-        while self.offset > 0.02:
-            pts = [self.start_pose[:3].copy(), self.start_pose[:3].copy()]
-            pts[0][self.axis_idx] += self.offset
-            pts[1][self.axis_idx] -= self.offset
-            self.get_logger().info(f"offset = {self.offset}")
-            if self.robot.inverse_kinematics(pts[0]) and self.robot.inverse_kinematics(pts[1]):
-                return True
-            self.offset -= 0.02
-        return False
+        # Update final poses for the controller to use
+        self.offset_pose_up = self.start_pose.copy()
+        self.offset_pose_up[self.axis_idx] += self.offset
+        self.offset_pose_down = self.start_pose.copy()
+        self.offset_pose_down[self.axis_idx] -= self.offset
+        self.get_logger().info(f"Start Pose:       {self.start_pose}")
+        self.get_logger().info(f"Offset Up Pose:   {self.offset_pose_up}")
+        self.get_logger().info(f"Offset Down Pose: {self.offset_pose_down}")
 
-    def _on_joint_states(self, msg: JointState):
-        q = np.array(msg.position[:5])
-        self.current_q = np.clip(q, self.joint_low, self.joint_high)
+        self.get_logger().info("Starting Joint Position Control to move to start position...")
+        return True
+    
+    def pick_elbow_up_conf(self, solutions):
+        """ Return the most elbow-up, well-conditioned solution from a list of IK solutions """
+        def score(q):
+            J = self.robot.jacobian(q)
+            sigma_min = np.linalg.svd(J, compute_uv=False)[-1]
+            return (q[1] + q[2] + q[3]) - sigma_min * 5  # prefer elbow-up + good conditioning
+        return min(solutions, key=score)
 
     def control_loop(self):
-        if self.target_start_q is None:
-            self.get_logger().info('Waiting for IK setup...', throttle_duration_sec=2.0)
-            return
         if self.current_q is None:
-            self.get_logger().warn('Waiting for joint_states — check QoS or simulator.', throttle_duration_sec=2.0)
+            self.get_logger().warn('Waiting for joint_states — check QoS or simulator is running.', throttle_duration_sec=2.0)
             return
 
-        # Latch start pose to actual robot position on first tick
-        if not self.initialized:
-            cur_pose = self.robot.forward_kinematics(self.current_q)
-            self.start_pose[:3] = cur_pose[:3]
-            self.target_pose = self.start_pose.copy() if hasattr(self, 'target_pose') else self.start_pose.copy()
-            self.initialized = True
-            self.get_logger().info(f'Latched start pose: {np.round(self.start_pose[:3], 3)}')
+        # Phase 1: Joint Velocity Control -> Move to Elbow Up Start Position
+        if not self.elbow_up_reached:
+            joint_error = self.start_joint_conf - self.current_q
+            joint_error_dis = np.linalg.norm(joint_error)
+
+            if joint_error_dis < 0.05:
+                self.elbow_up_reached = True
+                self.target_pose = self.offset_pose_up
+                self.get_logger().info('Elbow-up start configuration reached. Switching to Cartesian Velocity control...')
+                return
+
+            joint_vel = np.clip(self.gains * joint_error, -self.max_joint_vel, self.max_joint_vel)
+            joint_vel, limited = self.robot.limit_velocities_at_bounds(self.current_q, joint_vel)
+            if limited:
+                self.get_logger().warn("Joint limit reached — velocity component zeroed")
+            self._publish_velocity(joint_vel)
+            return
+    
+        # Phase 2: Cartesian Velocity Control
+        car_pose  = self.robot.forward_kinematics(self.current_q)[0:len(self.target_pose)]
+        car_error = self.target_pose - car_pose
+
+        # Update Target Pose
+        if abs(car_error[self.axis_idx]) < 0.01:  
+            self.direction *=-1
+            if self.direction == 1:
+                self.target_pose = self.offset_pose_up
+            else:
+                self.target_pose = self.offset_pose_down
             return
 
-        cur_pose = self.robot.forward_kinematics(self.current_q)
+        # Build Cartesian Velocity Input
+        car_vel = np.zeros(6)
+        car_vel[:len(self.target_pose)] = np.array(self.gains) * car_error
+        car_vel[self.axis_idx] = self.direction * self.max_cart_vel
 
-        # Distance remaining to current target
-        target_axis = self.start_pose[self.axis_idx] + self.direction * self.offset
-        remaining = abs(target_axis - cur_pose[self.axis_idx])
-
-        # Switch direction when within 2 cm of target
-        if remaining < 0.02:
-            self.direction *= -1
-
-        # Proportional speed: full gain when far, decelerate in last 5 cm
-        decel_dist = 0.05
-        speed = self.gain if remaining > decel_dist else self.gain * (remaining / decel_dist)
-
-        v_cartesian = np.zeros(6)
-        v_cartesian[self.axis_idx] = self.direction * speed
-
-        # Correct drift on the two uncontrolled position axes (x, y)
-        for i in range(3):
-            if i != self.axis_idx:
-                v_cartesian[i] = self.gain * (self.start_pose[i] - cur_pose[i])
-
-        # Damped Jacobian Inverse
-        jac = self.robot.jacobian(self.current_q)
-        inv_jac = jac.T @ np.linalg.inv(jac @ jac.T + (0.02**2) * np.eye(6))
-        q_dot = inv_jac @ v_cartesian
-
-        # Bound Enforcement
-        buf, stop = 0.08, 0.01
-        for i in range(5):
-            d_hi, d_lo = self.joint_high[i] - self.current_q[i], self.current_q[i] - self.joint_low[i]
-            if q_dot[i] > 0:
-                if d_hi < stop: q_dot[i] = 0.0
-                elif d_hi < buf: q_dot[i] *= (d_hi / buf)
-            elif q_dot[i] < 0:
-                if d_lo < stop: q_dot[i] = 0.0
-                elif d_lo < buf: q_dot[i] *= (d_lo / buf)
-
-        q_dot = np.clip(q_dot, -self.max_joint_vel, self.max_joint_vel)
-        self._publish_velocity(q_dot)
-
+        # Built Joint Velocity Input
+        jac_inv, is_singular = self.robot.jacobian_inverse(self.current_q)
+        if is_singular:
+            self.get_logger().info(f"Close to singularity ...")
+        
+        joint_vel = jac_inv @ car_vel
+        joint_vel = np.clip(joint_vel, -self.max_joint_vel, self.max_joint_vel)
+        joint_vel, limited = self.robot.limit_velocities_at_bounds(self.current_q, joint_vel)
+        if limited:
+            self.get_logger().warn("Joint limit reached — velocity component zeroed")
+        
+        # Publish joint velocity
+        self._publish_velocity(joint_vel)
+        
     def _publish_velocity(self, q_dot):
         msg = JointTrajectory()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.joint_names = self.robot.joint_names
         p = JointTrajectoryPoint()
-        p.velocities = list(q_dot) + [0.0]
+        p.velocities = list(q_dot) + [0.0]  # trailing 0.0 is gripper (joint 6), kept stationary
         msg.points = [p]
         self._joint_cmd_pub.publish(msg)
+
+    def _publish_position(self, q):
+        msg = JointTrajectory()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.joint_names = self.robot.joint_names
+        p = JointTrajectoryPoint()
+        p.positions = list(q) + [0.0]  # trailing 0.0 is gripper (joint 6), kept stationary
+        msg.points = [p]
+        self._joint_cmd_pub.publish(msg)
+
+    def _on_joint_states(self, msg: JointState):
+        self.current_q = np.array(msg.position[:5])
+
 
 def main(args=None):
     rclpy.init(args=args)
     # Start at 20cm height, try to oscillate 15cm up/down
-    node = VelTrajectoryController(start_pose=(0.0, 0.4, 0.2, 0,0,0), offset=0.15)
+    node = VelTrajectoryController(start_pos=[0.2, 0.2, 0.2], offset=0.15)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

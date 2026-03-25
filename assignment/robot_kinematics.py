@@ -112,15 +112,26 @@ class RobotKinematics():
 
         return sp.Matrix([*pos, rot_x, rot_y, rot_z])  
 
-    def _check_joint_limits(self, joints):
+    def check_joint_limits(self, joints):
         # Check number of joint configurations
         if len(joints) != len(self.joint_names):
             raise ValueError(f"Joint Configuration Refused. Expected 5 values, got {len(joints)}")
         
-        for i, q in enumerate(joints):
-            low, high = self.joint_bounds[i]
-            if not np.all((q >= low) & (q <= high)):
-                raise ValueError(f"Joint Configuration Refused. {self.joint_names[i]} outside [{low:.3f}, {high:.3f}]")
+        joints = np.array(joints, dtype=float)
+        out_of_bounds_flag = False
+
+        for i, (low, high) in enumerate(self.joint_bounds):
+            clamped = np.clip(joints[i], low, high)
+            if not np.array_equal(clamped, joints[i]):
+                out_of_bounds_flag = True
+                joints[i] = clamped
+
+        return joints, out_of_bounds_flag
+
+        # for i, q in enumerate(joints):
+        #     low, high = self.joint_bounds[i]
+        #     if not np.all((q >= low) & (q <= high)):
+        #         raise ValueError(f"Joint Configuration Refused. {self.joint_names[i]} outside [{low:.3f}, {high:.3f}]")
         
     def forward_kinematics(self, joints):
         """Compute 6-DOF pose, if joint configuration within bounds.
@@ -128,7 +139,8 @@ class RobotKinematics():
         Scalar inputs  → returns shape (6,)   [x, y, z, rx, ry, rz]
         Vectorized inputs → returns shape (6, N) [row per DOF, column per sample]
         """
-        self._check_joint_limits(joints)
+        joints, _ = self.check_joint_limits(joints)
+        
         # squeeze: scalar (6,1)→(6,) | vectorized (6,1,N)→(6,N)
         return np.squeeze(np.array(self._numeric_fk(*joints)))
 
@@ -187,35 +199,42 @@ class RobotKinematics():
 
     def jacobian(self, joints):
         """Returns the 5x5 Jacobian matrix at the given joint configuration."""
-        self._check_joint_limits(joints)
+        joints, _ = self.check_joint_limits(joints)
         # squeeze: scalar (6,1)→(6,) | vectorized (6,1,N)→(6,N)
         return np.squeeze(np.array(self._numeric_jac(*joints)))
     
-    def jacobian_inverse(self, current_joint_angles, 
-                            singularity_threshold=0.1, lambda_max=0.1):
+    def jacobian_inverse(self, current_joint_angles,
+                            singularity_threshold=0.1, lambda_singular=0.5):
         """
         Computes joint angle velocities from a task-space desired velocity using the
         Damped Least Squares (DLS) pseudo-inverse of the Jacobian (and prevent singularities).
 
         For that , the DLS replaces 1/σ_i with σ_i/(σ_i² + λ²), which keeps
-        the solution bounded at the cost of a small positional error 
+        the solution bounded at the cost of a small positional error
 
         Based on Nakamura–Hanafusa variable damping rule.
+
+        When singularity is detected (σ_min < singularity_threshold), the Jacobian is
+        relaxed by switching to lambda_singular > lambda_max. This heavier damping allows
+        the robot to continue moving through singular configurations at reduced accuracy,
+        rather than freezing.
         """
         # Compute Jacobian at current configuration — unpack array into 5 positional args
         J = self.jacobian(current_joint_angles)
+        # return np.linalg.pinv(J)
 
-        # Compute SVD decompositionof the Jacobian
+        # Compute SVD decomposition of the Jacobian
         U, singular_values, Vt = np.linalg.svd(J, full_matrices=False)
 
-        # Singularity analysis - High confition values/low eigen values indicate proximity to a singularity.
+        # Singularity analysis - low σ_min indicates proximity to a singularity
         sigma_min = singular_values[-1]
         is_singular = sigma_min < singularity_threshold
 
-        # Prepare adaptive DLS damping (Nakamura–Hanafusa 1986) ---
+        # Adaptive DLS damping (Nakamura–Hanafusa 1986):
+        # Near singularity, relax the Jacobian by applying heavier damping (lambda_singular),
+        # interpolating smoothly from 0 at the threshold to lambda_singular² at σ_min=0.
         if is_singular:
-            # λ² scales from 0 (at threshold) to lambda_max² (at σ=0)
-            lambda_sq = lambda_max**2 * (1.0 - (sigma_min / singularity_threshold)**2)
+            lambda_sq = lambda_singular**2 * (1.0 - (sigma_min / singularity_threshold)**2)
         else:
             lambda_sq = 0.0
 
@@ -226,6 +245,29 @@ class RobotKinematics():
         inverse_jacobian = Vt.T @ np.diag(damped_inv_sigmas) @ U.T
 
         return inverse_jacobian, is_singular
+    
+    def limit_velocities_at_bounds(self, current_q, joint_vel):
+        """
+        Zero out velocity components that would drive a joint further past its limit.
+
+        For each joint i:
+        - if current_q[i] >= high bound and joint_vel[i] > 0  → zero it (can't go higher)
+        - if current_q[i] <= low  bound and joint_vel[i] < 0  → zero it (can't go lower)
+
+        Returns (limited_vel, was_limited: bool).
+        """
+        limited_vel = np.array(joint_vel, dtype=float)
+        limited_vel_flag = False
+
+        for i, (low, high) in enumerate(self.joint_bounds):
+            if current_q[i] >= high and limited_vel[i] > 0:
+                limited_vel[i] = 0.0
+                limited_vel_flag = True
+            elif current_q[i] <= low and limited_vel[i] < 0:
+                limited_vel[i] = 0.0
+                limited_vel_flag = True
+
+        return limited_vel, limited_vel_flag
     
 
 
