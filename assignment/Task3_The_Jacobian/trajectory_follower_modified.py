@@ -214,34 +214,18 @@ def main():
     
     executor = TrajectoryExecutor()
     
-    # circle = CircleTrajectory(
-    #     center=(0.15, 0.15, 0), 
-    #     radius=0.1,
-    #     num_points=30
-    # )
-    
-    # square = SquareTrajectory(
-    #     center=(0.15, 0.15, 0.05), 
-    #     side_length=0.1,
-    #     num_points=40
-    # )
-    
-    half_ellipse = HalfEllipseTrajectory(
-        p1=[-0.2, 0.0],
-        p2=[0.0, 0.25],
-        p3=[0.2, 0.0],
-        segment=1,
-        normal_axis='z',
-        num_points=60,
-        center=(0.0, 0.0, 0.1),
+    circle = CircleTrajectory(
+        center=(0.15, 0.15, 0), 
+        radius=0.1,
+        num_points=30
     )
     
-    all_poses = []
+    square = SquareTrajectory(
+        center=(0.15, 0.15, 0.05), 
+        side_length=0.1,
+        num_points=40
+    )
     
-    # all_poses.extend(circle.get_poses())
-    # all_poses.extend(square.get_poses())
-    all_poses.extend(half_ellipse.get_poses())
-
     half_ellipse = HalfEllipseTrajectory(
         p1=[-0.2, 0.0],
         p2=[0.0, 0.25],
@@ -251,6 +235,11 @@ def main():
         num_points=60,
         center=(0.0, 0.0, 0.1),
     )
+    
+    all_poses = []
+    
+    all_poses.extend(circle.get_poses())
+    all_poses.extend(square.get_poses())
     all_poses.extend(half_ellipse.get_poses())
     
     total_time = 15.0 * 3  # 15 seconds per shape, rough estimate
