@@ -1,0 +1,42 @@
+# pick_place_config
+# Positions in metres, angles in radians. Adjust A/B to your physical setup.
+pick_points:
+  - {x: -0.2, y: 0.0, z: 0.1}
+  - {x: -0.2, y: 0.1, z: 0.1}  # Second object
+  - {x: -0.2, y: -0.1, z: 0.1} # Third object
+
+place_points:
+  - {x: 0.2, y: 0.0, z: 0.1}
+  - {x: 0.2, y: 0.1, z: 0.1}
+  - {x: 0.2, y: -0.1, z: 0.1}
+
+home:
+  joint_angles_rad: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+motion:
+  thresh_hard: 0.04
+  thresh_soft: 0.04
+  approach_z: 0.15
+  threshold_approach_m: 0.04
+  threshold_pick_m: 0.02
+  threshold_lift_m: 0.04
+  dwell_grasp_s: 0.5
+  dwell_release_s: 0.5
+  descent_timeout_s: 5.0
+  cycles: 2
+
+motion_ctr:
+  k_xy: 6.0
+  k_z: 2.0
+  k_rot: 1.0
+  d_xy: 0.3
+  d_z: 0.1
+  d_rot: 0.1
+  max_cart_vel_m_s: 0.20
+  max_joint_vel_rad_s: 1.5
+
+gripper_ctr:
+  open_angle_rad: 1.5707963
+  close_angle_rad: 0.3
+  vel_rad_s: 0.5
+  dead_band_rad: 0.05
