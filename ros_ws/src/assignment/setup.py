@@ -33,7 +33,8 @@ setup(
             'pick_place_impedance     = assignment.pick_place_impedance:main',
             'set_joint_conf = assignment.set_joint_conf:main',
             'read_ee_cart = assignment.read_ee_cart:main',
-            'publish_ee_pose = assignment.publish_ee_pose:main'
+            'publish_ee_pose = assignment.publish_ee_pose:main',
+            'pick_place_node = assignment.pick_place_node:main'
         ],
     },
 )

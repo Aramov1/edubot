@@ -93,28 +93,30 @@ class HalfEllipseTrajectory(ShapeGenerator):
         else:
             raise ValueError("Segment must be 1 (p1 to p2) or 2 (p2 to p3)")
 
-# # State Machiene
-# class StateMachine(Enum):
-#     HOME     = auto()
-#     MOVE     = auto()
-#     DESCEND  = auto()
-#     LIFT     = auto()
-#     GRASP    = auto()
-#     RELEASE  = auto()
-#     SWAP     = auto()
-#     DONE     = auto()
-
+# State Machiene
 class StateMachine(Enum):
-    SWAP        = auto() # Set next pick/place pair
-    HOME        = auto() # Move to home joint config
-    APPROACH    = auto() # Half-ellipse from Home to above Pick
-    DESCEND     = auto() # Linear drop to object
-    GRASP       = auto() # Close gripper
-    LIFT        = auto() # Half-ellipse from Pick to above Place
-    DESCEND_PL  = auto() # Linear drop to place
-    RELEASE     = auto() # Open gripper
-    LIFT_SAFE   = auto() # Small lift after release
-    DONE        = auto()
+    HOME     = auto()
+    MOVE     = auto()
+    MOVE_PI     = auto()
+    MOVE_PL     = auto()
+    DESCEND  = auto()
+    LIFT     = auto()
+    GRASP    = auto()
+    RELEASE  = auto()
+    SWAP     = auto()
+    DONE     = auto()
+
+# class StateMachine(Enum):
+#     SWAP        = auto() # Set next pick/place pair
+#     HOME        = auto() # Move to home joint config
+#     APPROACH    = auto() # Half-ellipse from Home to above Pick
+#     DESCEND     = auto() # Linear drop to object
+#     GRASP       = auto() # Close gripper
+#     LIFT        = auto() # Half-ellipse from Pick to above Place
+#     DESCEND_PL  = auto() # Linear drop to place
+#     RELEASE     = auto() # Open gripper
+#     LIFT_SAFE   = auto() # Small lift after release
+#     DONE        = auto()
 
 
 
@@ -388,7 +390,7 @@ class PickPlaceNode(Node):
                 self.pick_pos  = self.pick_queue[self.point_index]
                 self.place_pos = self.place_queue[self.point_index]
                 
-                self.state = StateMachine.HOME
+                self.state = StateMachine.MOVE(self.pick_pos, self.place_pos)
             else:
                 self.cycles -= 1 # One Cycle Completer
                 if self.cycles:
@@ -400,6 +402,20 @@ class PickPlaceNode(Node):
                     self.state = StateMachine.DONE
 
     def _control_loop_position(self):
+        "DESIRED MOVEMENT OF THE ROBOT:"
+        "1. SWAP -> HOME"
+        "2. HOME -> MOVE_PI (to Pick + offset)"
+        "3. MOVE_PI -> DESCEND (Pick position)"
+        "4. DESCEND -> GRASP"
+        "5. GRASP -> LIFT (Pick position)"
+        "6. LIFT -> MOVE_PL (to Place + offset)"
+        "7. MOVE_PL -> DESCEND (Place position)"
+        "8. DESCEND -> RELEASE"
+        "9. RELEASE -> LIFT (Place position)"
+        "10. LIFT -> SWAP"
+        "11. SWAP -> MOVE_PI"
+        "--- RESET FROM 3. ---"
+
         if self.current_q is None: return
 
         # 1. Check if the controller is currently executing a path
@@ -412,13 +428,22 @@ class PickPlaceNode(Node):
         x_cur = self.robot.forward_kinematics(self.current_q[:5])[:3]
 
         if self.state == StateMachine.SWAP:
-            self.point_index += 1
             if self.point_index < len(self.pick_queue):
-                self.pick_pos = self.pick_queue[self.point_index]
+                self.get_logger().info(f"Moving to object set #{self.point_index + 1}")
+                
+                self.pick_pos  = self.pick_queue[self.point_index]
                 self.place_pos = self.place_queue[self.point_index]
-                self.state = StateMachine.HOME
+                
+                self.state = StateMachine.MOVE(self.pick_pos, self.place_pos)
             else:
-                self.state = StateMachine.DONE
+                self.cycles -= 1 # One Cycle Completer
+                if self.cycles:
+                    # Revert Pick & Place Locations
+                    self.pick_queue, self.place_queue = self.place_queue, self.pick_queue
+                    self.point_index = -1
+                else:
+                    self.get_logger().info("All points completed!")
+                    self.state = StateMachine.DONE
 
         elif self.state == StateMachine.HOME:
             # Move directly to Home configuration
@@ -433,11 +458,6 @@ class PickPlaceNode(Node):
             self.ctrl.generate_ellipse_path(x_cur, safe_pick, 0.05, self.current_q)
             self.state = StateMachine.DESCEND
 
-        elif self.state == StateMachine.DESCEND:
-            # Move straight down to object
-            self.ctrl.generate_linear_point(self.pick_pos, self.current_q)
-            self.state = StateMachine.GRASP
-            self.start_time = time.time()
 
         elif self.state == StateMachine.GRASP:
             self.gripper_val = self.cfg['gripper_ctr']['close_angle_rad']
@@ -445,21 +465,37 @@ class PickPlaceNode(Node):
                 self.state = StateMachine.LIFT
 
         elif self.state == StateMachine.LIFT:
-            # Generate big arc from Pick to Place
-            safe_offset = self.cfg['motion']['approach_z'] - self.place_pos[2]
-            safe_place = [self.place_pos[0], self.place_pos[1], self.place_pos[2] + safe_offset]
-            self.ctrl.generate_ellipse_path(x_cur, safe_place, 0.1, self.current_q)
-            self.state = StateMachine.DESCEND_PL
+            # Generate the vertical offset from pick/place position and move
+            safe_offset = self.cfg['motion']['approach_z'] + self.place_pos[2]
+            safe_place = [self.place_pos[0], self.place_pos[1], safe_offset]
+            self.ctrl.generate_linear_point(safe_place, self.current_q)
+            
+            # Move to next state machine
+            joint_pose = JointState()
+            if joint_pose[4] <= 0.61:
+                self.state = StateMachine.MOVE_PL
+                self.start_time = time.time()
+            elif joint_pose[4] > 0.61:            
+                self.state = StateMachine.SWAP
+                self.start_time = time.time()
 
-        elif self.state == StateMachine.DESCEND_PL:
+        elif self.state == StateMachine.DESCEND:
+            # Vertical descent to pick/place position
             self.ctrl.generate_linear_point(self.place_pos, self.current_q)
-            self.state = StateMachine.RELEASE
-            self.start_time = time.time()
+
+            # Move to next state machine
+            joint_pose = JointState()
+            if joint_pose[4] <= 0.61:
+                self.state = StateMachine.RELEASE
+                self.start_time = time.time()
+            elif joint_pose[4] > 0.61:            
+                self.state = StateMachine.GRASP
+                self.start_time = time.time()
 
         elif self.state == StateMachine.RELEASE:
             self.gripper_val = self.cfg['gripper_ctr']['open_angle_rad']
             if time.time() - self.start_time > 1.0:
-                self.state = StateMachine.SWAP
+                self.state = StateMachine.LIFT
 
     def _control_loop_heuristic(self):
         """
