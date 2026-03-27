@@ -65,6 +65,16 @@ class TrajectoryExecutor(Node):
         self._joint_cmd_pub.publish(traj_msg)
         
         self.current_point_idx += 1
+    
+    def _publish_position(self, q_list, gripper_pos):
+        msg = JointTrajectory()
+        msg.joint_names = self.robot.joint_names
+        point = JointTrajectoryPoint()
+        # In Position Control, we send 'positions' instead of 'velocities'
+        point.positions = [float(v) for v in q_list] + [float(gripper_pos)]
+        point.time_from_start.nanosec = int(1e9 / 10) # Timing for the controller
+        msg.points = [point]
+        self._joint_cmd_pub.publish(msg)
 
 
 # ==========================================
@@ -175,86 +185,148 @@ class TriangleTrajectory(ShapeGenerator):
     
 
 class HalfEllipseTrajectory(ShapeGenerator):
-    def __init__(self, p1, p2, p3, segment, center, normal_axis='z', num_points=20):
+    def __init__(self, p1, p2, p3, center, normal_axis='z', num_points=20):
+        """
+        p1: First extreme point (local 2D)
+        p2: Upper peak point (local 2D)
+        p3: Second extreme point (local 2D)
+        segment: Choice of trajectory (1, 2, 3, or 4)
+        """
         super().__init__(center=center, normal_axis=normal_axis, num_points=num_points)
         self.p1 = np.array(p1)
         self.p2 = np.array(p2)
         self.p3 = np.array(p3)
-        self.segment = segment
+
+        # The local 2D center is the midpoint between the two extremes
         self.local_center = (self.p1 + self.p3) / 2.0
         
     def generate_trajectory(self):
-        traj1 = []
-        traj2 = []
-        u = self.p3 - self.local_center  
-        v = self.p2 - self.local_center 
+        traj1, traj2, traj3, traj4 = [], [], [], []
         
-        t1_values = np.linspace(np.pi, np.pi/2, self.num_points)
-        for t in t1_values:
-            point_2d = self.local_center + u * np.cos(t) + v * np.sin(t)
-            target_pose = self.map_2d_to_3d(point_2d[0], point_2d[1])
-            traj1.append({'target_pose': target_pose, 'parameter': t})
-            
-        t2_values = np.linspace(np.pi/2, 0, self.num_points)
-        for t in t2_values:
-            point_2d = self.local_center + u * np.cos(t) + v * np.sin(t)
-            target_pose = self.map_2d_to_3d(point_2d[0], point_2d[1])
-            traj2.append({'target_pose': target_pose, 'parameter': t})
-            
-        if self.segment == 1:
-            return traj1
-        elif self.segment == 2:
-            return traj2
-        else:
-            raise ValueError("Segment must be 1 (p1 to p2) or 2 (p2 to p3)")
+        # Vectors defining the ellipse axes in 2D
+        u = self.p3 - self.local_center  # Vector corresponding to t = 0
+        v = self.p2 - self.local_center  # Vector corresponding to t = pi/2
+        
+        # Helper function to generate a segment based on a range of t
+        def create_segment(start_t, end_t):
+            segment_list = []
+            t_values = np.linspace(start_t, end_t, self.num_points)
+            for t in t_values:
+                point_2d = self.local_center + u * np.cos(t) + v * np.sin(t)
+                target_pose = self.map_2d_to_3d(point_2d[0], point_2d[1])
+                segment_list.append({'target_pose': target_pose, 'parameter': t})
+            return segment_list
+
+        # Forward Trajectories
+        segments = [
+            create_segment(np.pi, np.pi/2), # 0: P1 -> P2
+            create_segment(np.pi/2, 0),     # 1: P2 -> P3
+            create_segment(0, np.pi/2),     # 2: P3 -> P2
+            create_segment(np.pi/2, np.pi)  # 3: P2 -> P1
+        ]
+        # Return ONLY the requested segment so get_poses() works
+        return segments
+
+class LinearTrajectory3D(ShapeGenerator):
+    def __init__(self, p1, p2, num_points=20):
+        """
+        p1: Start point (3D)
+        p2: End point (3D)
+        """
+        super().__init__(center=None, normal_axis=None, num_points=num_points)
+        self.p1 = np.array(p1)
+        self.p2 = np.array(p2)
+
+    def generate_trajectory(self):
+        trajectory = []
+
+        t_values = np.linspace(0, 1, self.num_points)
+
+        for t in t_values:
+            # Linear interpolation in 3D
+            point_3d = (1 - t) * self.p1 + t * self.p2
+
+            # Match HalfEllipseTrajectory format EXACTLY
+            target_pose = [
+                float(point_3d[0]),
+                float(point_3d[1]),
+                float(point_3d[2]),
+                float(np.pi),
+                0.0
+            ]
+
+            trajectory.append({
+                'target_pose': target_pose,
+                'parameter': t
+            })
+
+        return trajectory
 
 
 def main():
     rclpy.init()
     
     executor = TrajectoryExecutor()
-    
-    # circle = CircleTrajectory(
-    #     center=(0.15, 0.15, 0), 
-    #     radius=0.1,
-    #     num_points=30
-    # )
-    
-    # square = SquareTrajectory(
-    #     center=(0.15, 0.15, 0.05), 
-    #     side_length=0.1,
-    #     num_points=40
-    # )
-    
-    half_ellipse = HalfEllipseTrajectory(
-        p1=[-0.2, 0.0],
-        p2=[0.0, 0.25],
-        p3=[0.2, 0.0],
-        segment=1,
-        normal_axis='z',
-        num_points=30,
-        center=(0.0, 0.0, 0.1),
-    )
-    
+
     all_poses = []
-    
-    # all_poses.extend(circle.get_poses())
-    # all_poses.extend(square.get_poses())
-    all_poses.extend(half_ellipse.get_poses())
 
     half_ellipse = HalfEllipseTrajectory(
         p1=[-0.2, 0.0],
         p2=[0.0, 0.25],
         p3=[0.2, 0.0],
-        segment=2,
-        normal_axis='z',
-        num_points=30,
         center=(0.0, 0.0, 0.1),
+        normal_axis='z',
+        num_points=20
     )
-    all_poses.extend(half_ellipse.get_poses())
-    
-    total_time = 15.0 * 3  # 15 seconds per shape, rough estimate
-    executor.execute_trajectories(all_poses, trajectory_time=total_time)
+    all_poses.append(half_ellipse.get_poses())
+
+    line = LinearTrajectory3D(
+        p1=[-0.2, 0.0, 0.1],
+        p2=[-0.2, 0.0, 0.0],
+        num_points=5
+    )
+    all_poses.append(line.get_poses()) #4
+
+    line = LinearTrajectory3D(
+        p1=[-0.2, 0.0, 0.0],
+        p2=[-0.2, 0.0, 0.1],
+        num_points=5
+    )
+    all_poses.append(line.get_poses()) #5
+
+    line = LinearTrajectory3D(
+        p1=[0.2, 0.0, 0.1],
+        p2=[0.2, 0.0, 0.0],
+        num_points=5
+    )
+    all_poses.append(line.get_poses()) #6
+
+    line = LinearTrajectory3D(
+        p1=[0.2, 0.0, 0.0],
+        p2=[0.2, 0.0, 0.1],
+        num_points=5
+    )
+    all_poses.append(line.get_poses()) #7
+
+    # To position
+    executor.execute_trajectories(all_poses[3], trajectory_time=7)
+    # Down to pick
+    #executor.execute_trajectories(all_poses[4], trajectory_time=7)
+    # Pick
+    executor._publish_position(np.zeros(5), 0.6)
+    # Lift
+    # executor.execute_trajectories(all_poses[5], trajectory_time=4)
+    # To Place
+    executor.execute_trajectories(all_poses[0], trajectory_time=7)
+    executor.execute_trajectories(all_poses[1], trajectory_time=7)
+    # Down to place
+    # executor.execute_trajectories(all_poses[6], trajectory_time=4)
+    # Place
+    executor._publish_position(np.zeros(5), 1.57)
+    # Lift
+    # executor.execute_trajectories(all_poses[7], trajectory_time=7)
+    # Home
+    executor.execute_trajectories(all_poses[2], trajectory_time=7)
     
     try:
         rclpy.spin(executor)

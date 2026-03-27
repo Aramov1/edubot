@@ -37,6 +37,6 @@ motion_ctr:
 
 gripper_ctr:
   open_angle_rad: 1.5707963
-  close_angle_rad: 0.3
+  close_angle_rad: 0.32
   vel_rad_s: 0.5
   dead_band_rad: 0.05
