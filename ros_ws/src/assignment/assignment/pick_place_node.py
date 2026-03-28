@@ -458,6 +458,7 @@ class PickPlaceNode(Node):
             self.ctrl.generate_ellipse_path(x_cur, safe_pick, 0.05, self.current_q)
             self.state = StateMachine.DESCEND
 
+        # ---------------------------------------------------------------------------------------------
 
         elif self.state == StateMachine.GRASP:
             self.gripper_val = self.cfg['gripper_ctr']['close_angle_rad']
