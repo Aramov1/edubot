@@ -106,20 +106,6 @@ class StateMachine(Enum):
     SWAP     = auto()
     DONE     = auto()
 
-# class StateMachine(Enum):
-#     SWAP        = auto() # Set next pick/place pair
-#     HOME        = auto() # Move to home joint config
-#     APPROACH    = auto() # Half-ellipse from Home to above Pick
-#     DESCEND     = auto() # Linear drop to object
-#     GRASP       = auto() # Close gripper
-#     LIFT        = auto() # Half-ellipse from Pick to above Place
-#     DESCEND_PL  = auto() # Linear drop to place
-#     RELEASE     = auto() # Open gripper
-#     LIFT_SAFE   = auto() # Small lift after release
-#     DONE        = auto()
-
-
-
 class MotionControllerPos():
     """Handles the Trajectory (Linear/Elipse) between two Targets, IK selection of the closest solution, 
     and index tracking of the target moving points."""
@@ -288,11 +274,11 @@ class PickPlaceNode(Node):
         self.robot = RobotKinematics()
         #self.ctrl  = MotionController(self.cfg)
         #self.ctrl  = MotionControllerPosition(n_points=20)
-        self.ctrl   = MotionController_HEURISTIC_VEL(v_avg=0.15)
+        self.ctrl   = MotionControllerPos(v_avg=0.15)
 
 
         # State & Movement Variables
-        self.state = StateMachine.SWAP
+        self.state = StateMachine.HOME
         self.current_q = None
         self.prev_x = None
         self.dx_filtered = np.zeros(6)
@@ -315,7 +301,7 @@ class PickPlaceNode(Node):
         # ROS Setup
         self.pub = self.create_publisher(JointTrajectory, 'joint_cmds', 10)
         self.sub = self.create_subscription(JointState, 'joint_states', self._on_state, qos_profile_sensor_data)
-        self.timer = self.create_timer(1/self.hz, self._control_loop_heuristic) 
+        self.timer = self.create_timer(1/self.hz, self._control_loop_position) 
 
         self.get_logger().info("PickPlaceNode started successfully!")
 
@@ -335,71 +321,71 @@ class PickPlaceNode(Node):
         mapping = dict(zip(msg.name, msg.position))
         self.current_q = np.array([mapping.get(name, 0.0) for name in self.robot.joint_names])
 
-    def _control_loop(self):
-        "Implementation of Pick & Place State Space Machiene Logic"
-        if self.current_q is None: 
-            self.get_logger().warn("Waiting For Joint States...")
-            time.sleep(1)
-            return
-        self.get_logger().info(f"Current state: {self.state}")
-        # Get Current Pose (FK) and Velocity (Finite Difference)
-        x_cur  = self.robot.forward_kinematics(self.current_q[:5])
-        dx_cur = self._get_velocity(x_cur)
+    # def _control_loop(self):
+    #     "Implementation of Pick & Place State Space Machiene Logic"
+    #     if self.current_q is None: 
+    #         self.get_logger().warn("Waiting For Joint States...")
+    #         time.sleep(1)
+    #         return
+    #     self.get_logger().info(f"Current state: {self.state}")
+    #     # Get Current Pose (FK) and Velocity (Finite Difference)
+    #     x_cur  = self.robot.forward_kinematics(self.current_q[:5])
+    #     dx_cur = self._get_velocity(x_cur)
 
-        # Logic Switch
-        if self.state == StateMachine.HOME:
-            self._move_to_pose(self._get_home_pose(), x_cur, dx_cur)
-            if self._at_target(self._get_home_pose()[:3], x_cur[:3], 'thresh_soft'):
-                self.state = StateMachine.DESCEND
+    #     # Logic Switch
+    #     if self.state == StateMachine.HOME:
+    #         self._move_to_pose(self._get_home_pose(), x_cur, dx_cur)
+    #         if self._at_target(self._get_home_pose()[:3], x_cur[:3], 'thresh_soft'):
+    #             self.state = StateMachine.DESCEND
 
-        elif self.state == StateMachine.DESCEND:
-            self._move_to_pose(self._combine(self.pick_pos), x_cur, dx_cur)
-            if self._at_target(self.pick_pos, x_cur[:3], 'thresh_soft'):
-                self.state = StateMachine.GRASP
-                self.start_time = time.time()
+    #     elif self.state == StateMachine.DESCEND:
+    #         self._move_to_pose(self._combine(self.pick_pos), x_cur, dx_cur)
+    #         if self._at_target(self.pick_pos, x_cur[:3], 'thresh_soft'):
+    #             self.state = StateMachine.GRASP
+    #             self.start_time = time.time()
 
-        elif self.state == StateMachine.GRASP:
-            # Close gripper, hold arm still
-            self._publish_velocity(np.zeros(5), self.cfg['gripper_ctr']['vel_rad_s'])
-            if time.time() - self.start_time > self.cfg['motion']['dwell_grasp_s']:
-                self.state = StateMachine.LIFT
+    #     elif self.state == StateMachine.GRASP:
+    #         # Close gripper, hold arm still
+    #         self._publish_velocity(np.zeros(5), self.cfg['gripper_ctr']['vel_rad_s'])
+    #         if time.time() - self.start_time > self.cfg['motion']['dwell_grasp_s']:
+    #             self.state = StateMachine.LIFT
 
-        elif self.state == StateMachine.LIFT:
-            target = np.array([self.pick_pos[0], self.pick_pos[1], self.cfg['motion']['approach_z']])
-            self._move_to_pose(self._combine(target), x_cur, dx_cur)
-            if self._at_target(target, x_cur[:3], 'thresh_soft'):
-                self.state = StateMachine.MOVE
+    #     elif self.state == StateMachine.LIFT:
+    #         target = np.array([self.pick_pos[0], self.pick_pos[1], self.cfg['motion']['approach_z']])
+    #         self._move_to_pose(self._combine(target), x_cur, dx_cur)
+    #         if self._at_target(target, x_cur[:3], 'thresh_soft'):
+    #             self.state = StateMachine.MOVE
 
-        elif self.state == StateMachine.MOVE:
-            target = np.array([self.place_pos[0], self.place_pos[1], self.cfg['motion']['approach_z']])
-            self._move_to_pose(self._combine(target), x_cur, dx_cur)
-            if self._at_target(target, x_cur[:3], 'thresh_soft'):
-                self.state = StateMachine.RELEASE
-                self.start_time = time.time()
+    #     elif self.state == StateMachine.MOVE:
+    #         target = np.array([self.place_pos[0], self.place_pos[1], self.cfg['motion']['approach_z']])
+    #         self._move_to_pose(self._combine(target), x_cur, dx_cur)
+    #         if self._at_target(target, x_cur[:3], 'thresh_soft'):
+    #             self.state = StateMachine.RELEASE
+    #             self.start_time = time.time()
 
-        elif self.state == StateMachine.RELEASE:
-            # Open gripper
-            self._publish_velocity(np.zeros(5), -self.cfg['gripper_ctr']['vel_rad_s'])
-            if time.time() - self.start_time > self.cfg['motion']['dwell_release_s']:
-                self.state = StateMachine.SWAP
+    #     elif self.state == StateMachine.RELEASE:
+    #         # Open gripper
+    #         self._publish_velocity(np.zeros(5), -self.cfg['gripper_ctr']['vel_rad_s'])
+    #         if time.time() - self.start_time > self.cfg['motion']['dwell_release_s']:
+    #             self.state = StateMachine.SWAP
 
-        elif self.state == StateMachine.SWAP:
-            if self.point_index < len(self.pick_queue):
-                self.get_logger().info(f"Moving to object set #{self.point_index + 1}")
+    #     elif self.state == StateMachine.SWAP:
+    #         if self.point_index < len(self.pick_queue):
+    #             self.get_logger().info(f"Moving to object set #{self.point_index + 1}")
                 
-                self.pick_pos  = self.pick_queue[self.point_index]
-                self.place_pos = self.place_queue[self.point_index]
+    #             self.pick_pos  = self.pick_queue[self.point_index]
+    #             self.place_pos = self.place_queue[self.point_index]
                 
-                self.state = StateMachine.MOVE(self.pick_pos, self.place_pos)
-            else:
-                self.cycles -= 1 # One Cycle Completer
-                if self.cycles:
-                    # Revert Pick & Place Locations
-                    self.pick_queue, self.place_queue = self.place_queue, self.pick_queue
-                    self.point_index = -1
-                else:
-                    self.get_logger().info("All points completed!")
-                    self.state = StateMachine.DONE
+    #             self.state = StateMachine.MOVE(self.pick_pos, self.place_pos)
+    #         else:
+    #             self.cycles -= 1 # One Cycle Completer
+    #             if self.cycles:
+    #                 # Revert Pick & Place Locations
+    #                 self.pick_queue, self.place_queue = self.place_queue, self.pick_queue
+    #                 self.point_index = -1
+    #             else:
+    #                 self.get_logger().info("All points completed!")
+    #                 self.state = StateMachine.DONE
 
     def _control_loop_position(self):
         "DESIRED MOVEMENT OF THE ROBOT:"
@@ -413,8 +399,7 @@ class PickPlaceNode(Node):
         "8. DESCEND -> RELEASE"
         "9. RELEASE -> LIFT (Place position)"
         "10. LIFT -> SWAP"
-        "11. SWAP -> MOVE_PI"
-        "--- RESET FROM 3. ---"
+        "--- RESET FROM 1. ---"
 
         if self.current_q is None: return
 
@@ -434,7 +419,7 @@ class PickPlaceNode(Node):
                 self.pick_pos  = self.pick_queue[self.point_index]
                 self.place_pos = self.place_queue[self.point_index]
                 
-                self.state = StateMachine.MOVE(self.pick_pos, self.place_pos)
+                self.state = StateMachine.HOME
             else:
                 self.cycles -= 1 # One Cycle Completer
                 if self.cycles:
@@ -449,16 +434,22 @@ class PickPlaceNode(Node):
             # Move directly to Home configuration
             self.ctrl.path_buffer = [self.home_q]
             self.ctrl.current_idx = 0
-            self.state = StateMachine.APPROACH
+            self.state = StateMachine.MOVE_PI
 
-        elif self.state == StateMachine.APPROACH:
+        elif self.state == StateMachine.MOVE_PI:
             # Generate arc to 'safe' height above pick point
-            safe_offset = self.cfg['motion']['approach_z'] - self.pick_pos[2]
-            safe_pick = [self.pick_pos[0], self.pick_pos[1], self.pick_pos[2] + safe_offset]
-            self.ctrl.generate_ellipse_path(x_cur, safe_pick, 0.05, self.current_q)
+            safe_offset = self.cfg['motion']['approach_z'] + self.pick_pos[2]
+            safe_pick = [self.pick_pos[0], self.pick_pos[1], safe_offset]
+            self._publish_position(self.current_q, 0.5)         # Make sure the gripper is open for PICK
+            self.ctrl.generate_ellipse_path(self, x_cur, safe_pick, 0.05, self.current_q)
             self.state = StateMachine.DESCEND
 
-        # ---------------------------------------------------------------------------------------------
+        elif self.state == StateMachine.MOVE_PL:
+            # Generate arc to 'safe' height above place point
+            safe_offset = self.cfg['motion']['approach_z'] + self.place_pos[2]
+            safe_place = [self.place_pos[0], self.place_pos[1], safe_offset]
+            self.ctrl.generate_ellipse_path(self, x_cur, safe_place, 0.05, self.current_q)
+            self.state = StateMachine.DESCEND
 
         elif self.state == StateMachine.GRASP:
             self.gripper_val = self.cfg['gripper_ctr']['close_angle_rad']
@@ -566,7 +557,7 @@ class PickPlaceNode(Node):
             target_xyz = [self.place_pos[0], self.place_pos[1], z_safe]
             
             # Larger height offset (0.1) to clear obstacles while carrying object
-            self.ctrl.generate_ellipse_path(x_cur[:3], target_xyz, 0.1, self.current_q)
+            self.ctrl.generate_ellipse_path(self, x_cur[:3], target_xyz, 0.1, self.current_q)
             self.state = StateMachine.RELEASE # Or DESCEND_PLACE if you have that state
             self.start_time = time.time()
 
