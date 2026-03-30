@@ -198,7 +198,7 @@ class RobotKinematics():
         Damped Least Squares (DLS) pseudo-inverse of the Jacobian.
         """
         J = self.jacobian(current_joint_angles)
-        J_5d = J[:6, :] 
+        J_5d = J[:5, :] 
         
         U, singular_values, Vt = np.linalg.svd(J_5d, full_matrices=False)
         

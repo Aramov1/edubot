@@ -36,19 +36,19 @@ class TrajectoryExecutor(Node):
         self.joint_angles_trajectory = [j for j in joint_trajectory if j is not None]
         
         if not self.joint_angles_trajectory:
-            print("No valid joint configurations to execute!")
+            self.get_logger().warn("No valid joint configurations to execute!")
             return
         
         self.time_per_point = trajectory_time / len(self.joint_angles_trajectory)
         self.current_point_idx = 0
         
-        print(f"Executing {len(self.joint_angles_trajectory)} points sequentially. Look at RViz!")
+        self.get_logger().info(f"Executing {len(self.joint_angles_trajectory)} points sequentially. Look at RViz!")
         self.timer = self.create_timer(self.time_per_point, self.timer_callback)
 
     def timer_callback(self):
         if self.current_point_idx >= len(self.joint_angles_trajectory):
             self.timer.cancel()
-            print("All trajectory executions completed!")
+            self.get_logger().info("All trajectory executions completed!")
             return
         
         joint_angles = self.joint_angles_trajectory[self.current_point_idx]
@@ -206,7 +206,7 @@ def main():
     
     executor = TrajectoryExecutor()
 
-    print("Generating trajectories...")
+    executor.get_logger().info("Generating trajectories...")
     
     circle = CircleTrajectory(
         center=(0.15, 0.15, 0), 
@@ -232,7 +232,7 @@ def main():
     
     all_poses = []
 
-    print("Computing IK for all trajectory points...")
+    executor.get_logger().info("Computing IK for all trajectory points...")
     
     all_poses.extend(circle.get_poses())
     all_poses.extend(square.get_poses())

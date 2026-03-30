@@ -1,0 +1,70 @@
+from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
+import os
+
+
+def generate_launch_description():
+    # Get package directories
+    lerobot_pkg_dir = get_package_share_directory('lerobot')
+    assignment_pkg_dir = get_package_share_directory('assignment')
+    
+    # Path to sim_velocity.launch.py from lerobot
+    sim_velocity_launch_file = os.path.join(
+        lerobot_pkg_dir, 
+        'launch', 
+        'sim_velocity.launch.py'
+    )
+    
+    # Include the sim_velocity launch file
+    sim_velocity_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(sim_velocity_launch_file)
+    )
+    
+    # Node 1: Publish End-Effector Pose
+    publish_ee_pose_node = Node(
+        package='assignment',
+        executable='publish_ee_pose',
+        name='publish_ee_pose',
+        output='screen'
+    )
+
+    # Node 2: LTPB Trajectory Action Client
+    LTPB_trajectory_action_client_node = Node(
+        package='assignment',
+        executable='LTPB_trajectory_action_client',
+        name='LTPB_trajectory_action_client',
+        output='screen'
+    )
+    
+    # Node 3: Trajectory Follower Action Server
+    trajectory_controller_action_server_node = Node(
+        package='assignment',
+        executable='trajectory_follower_action_server',
+        name='trajectory_follower_action_server',
+        output='screen'
+    )
+
+    """
+    # Node 2: Visualize End-Effector Trajectory
+    visualize_ee_trajectory_node = Node(
+        package='assignment',
+        executable='visualize_ee_trajectory',
+        name='visualize_ee_trajectory',
+        output='screen'
+    )
+    """
+    
+    # Create the launch description
+    ld = LaunchDescription()
+    
+    # Add all actions in order
+    ld.add_action(sim_velocity_launch)
+    ld.add_action(publish_ee_pose_node)
+    #ld.add_action(visualize_ee_trajectory_node)
+    ld.add_action(LTPB_trajectory_action_client_node)
+    ld.add_action(trajectory_controller_action_server_node)
+    
+    return ld
