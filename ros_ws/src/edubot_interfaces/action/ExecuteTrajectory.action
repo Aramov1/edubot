@@ -1,0 +1,14 @@
+float64[] time_array
+float64[] x_path
+float64[] y_path
+float64[] z_path
+float64[] rot_x_path
+float64[] rot_y_path
+float64[] rot_z_path
+float64[] gripper_path
+---
+bool success
+string message
+---
+float64 current_time
+float64 percent_complete
