@@ -41,6 +41,7 @@ setup(
             'pick_and_place_client = assignment.pick_and_place_controller:main_client',
             'competition_server    = assignment.competition_controller:main_server',
             'competition_client    = assignment.competition_controller:main_client',
+            'point_follower        = assignment.point_follower:main',
         ],
     },
 )

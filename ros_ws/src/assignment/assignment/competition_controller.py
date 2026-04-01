@@ -86,11 +86,16 @@ class LTPBTrajectory:
                 grip = GRIPPER_CLOSED if grasp else GRIPPER_OPEN
 
             elif t < t_end_travel:
-                # Phase 2: travel from P1 to P4 along LTPB arc
-                ltpb_t = t - self.t_grip
+                # Phase 2: travel from P1 to P4 along LTPB arc.
+                # _local_y is symmetric and returns to 0 at t7, so without
+                # correction the arc always ends at P1[2]. A linear Z
+                # interpolation (proportional to horizontal progress) shifts
+                # the arc so it lands exactly at P4[2], handling stacking.
+                ltpb_t    = t - self.t_grip
+                x_prog    = self._local_x(ltpb_t) / self.L if self.L > 0 else 0.0
                 x = self.P1[0] + self._local_x(ltpb_t) * self.cos_theta
                 y = self.P1[1] + self._local_x(ltpb_t) * self.sin_theta
-                z = self.P1[2] + self._local_y(ltpb_t)
+                z = self.P1[2] + self._local_y(ltpb_t) + (self.P4[2] - self.P1[2]) * x_prog
                 grip = GRIPPER_CLOSED if grasp else GRIPPER_OPEN
 
             elif t < t_end_dwell:
