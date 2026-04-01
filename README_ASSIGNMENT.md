@@ -10,6 +10,7 @@ The implemented tasks are:
 - **Task 2 — Shape Following** — move the end-effector along geometric shapes (position control)
 - **Task 3 — Velocity Controller** — track a trajectory using velocity-based closed-loop control
 - **Task 4 — Pick and Place** — pick and place objects using LTPB trajectories
+- **Competition — Autonomous Pick and Place** — stack objects at three locations using LTPB + CLIK
 
 ---
 
@@ -162,6 +163,62 @@ P4   = [0.20, 0.15, 0.05]   # Pick/drop point 2
 Motion profile parameters (`v_max`, `a_max`) can be tuned in the `LTPB_Trajectory` constructor inside the same file.
 
 Rebuild after editing.
+
+---
+
+## Competition — Autonomous Pick and Place
+
+Picks an object from a fixed position and stacks it at up to three target locations using LTPB trajectories and CLIK velocity control. Both the action server and client are contained in a single file (`competition_controller.py`).
+
+**Simulation:**
+```bash
+ros2 launch assignment sim_competition.launch.py
+```
+
+**Real hardware:**
+```bash
+ros2 launch assignment hw_competition.launch.py
+```
+
+### Nodes launched
+
+| Node | Role |
+|---|---|
+| `competition_server` | CLIK action server — tracks LTPB trajectories via Jacobian inverse |
+| `competition_client` | Generates trajectories and sends them as action goals |
+| `publish_ee_pose` | Publishes end-effector pose on `/ee_pose` |
+
+### Changing pick/place positions
+
+Edit the Cartesian constants at the top of:
+```
+ros_ws/src/assignment/assignment/competition_controller.py
+```
+
+```python
+PICK   = [0.04, 0.16, 0.04]   # Pick position         [x, y, z] in metres
+PLACE1 = [0.10, 0.12, 0.04]   # Place position 1
+PLACE2 = [0.10, 0.12, 0.06]   # Place position 2 (stacked on 1)
+PLACE3 = [0.10, 0.12, 0.08]   # Place position 3 (stacked on 1 & 2)
+
+LIFT_HEIGHT = 0.05             # Arc clearance height (m)
+```
+
+### Motion profile per cycle
+
+Each pick-and-place cycle follows four phases:
+
+| Phase | Description |
+|---|---|
+| 1 — Dwell at pick | Arm arrives at `PICK`, gripper closes |
+| 2 — Travel arc | LTPB arc from `PICK` to `PLACE`, handling different Z heights |
+| 3 — Dwell at place | Gripper opens, object released |
+| 4 — Retract | Arm lifts straight up by `LIFT_HEIGHT` to clear stacked blocks |
+
+Rebuild after editing:
+```bash
+cd ros_ws && colcon build --packages-select assignment && source install/setup.bash
+```
 
 ---
 
