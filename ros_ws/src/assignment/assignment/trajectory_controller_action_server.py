@@ -101,7 +101,7 @@ class TrajectoryControllerNode(Node):
         self._gripper_arr = np.array(goal_handle.request.gripper_path)
         
         # Max angular velocity allowed, gain for P-control, tolerance for reaching points, and a Future to signal when the trajectory is complete
-        self.Kp = 1.5
+        self.Kp = 2
         self.max_vel = 0.5
         self.tolerance = 0.05
         self._trajectory_future = Future() 
@@ -336,10 +336,12 @@ class TrajectoryControllerNode(Node):
             
             # If at upper limit and trying to go higher, cut the throttle
             if self.current_q_arm[i] >= high and q_dot_arm[i] > 0:
+                self.get_logger().warn(f'Joint {i} hit UPPER limit! Velocity zeroed.', throttle_duration_sec=0.5)
                 q_dot_arm[i] = 0.0
             
             # If at lower limit and trying to go lower, cut the throttle
             elif self.current_q_arm[i] <= low and q_dot_arm[i] < 0:
+                self.get_logger().warn(f'Joint {i} hit LOWER limit! Velocity zeroed.', throttle_duration_sec=0.5)
                 q_dot_arm[i] = 0.0
         # -----------------------------------
         

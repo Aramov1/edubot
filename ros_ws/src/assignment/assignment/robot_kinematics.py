@@ -6,22 +6,22 @@ from scipy.optimize import minimize
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="scipy")
 
-# Limited Joint Conf
+# # Limited Joint Conf
 JOINT_CONFIG_LIMITS = {
     'Shoulder_Rotation': (-2.0, 2.0),
     'Shoulder_Pitch':    (-np.pi/2, np.pi/2),
     'Elbow':             (-np.pi/2, np.pi/2),
     'Wrist_Pitch':       (-np.pi/2, np.pi/2),
-    'Wrist_Roll':        (-np.pi, np.pi),
+    'Wrist_Roll':        (-3, 3),
 }
 
-# # Unlimited Joint Conf
+# Unlimited Joint Conf
 # JOINT_CONFIG_LIMITS = {
-#     'Shoulder_Rotation': (-np.pi, 2np.pi),
-#     'Shoulder_Pitch':    (-np.pi, 2np.pi),Limit
-#     'Elbow':             (-np.pi, 2np.pi),
-#     'Wrist_Pitch':       (-np.pi, 2np.pi),
-#     'Wrist_Roll':        (-np.pi, 2np.pi),
+#     'Shoulder_Rotation': (-np.pi, np.pi),
+#     'Shoulder_Pitch':    (-np.pi, np.pi),
+#     'Elbow':             (-np.pi, np.pi),
+#     'Wrist_Pitch':       (-np.pi, np.pi),
+#     'Wrist_Roll':        (-np.pi, np.pi),
 # }
 
 class RobotKinematics():
@@ -132,7 +132,7 @@ class RobotKinematics():
         # squeeze: scalar (6,1)→(6,) | vectorized (6,1,N)→(6,N)
         return np.squeeze(np.array(self._numeric_fk(*joints)))
 
-    def inverse_kinematics(self, target_pose, n_restarts=25, error_threshold=1e-5, dedup_tol=0.01):
+    def inverse_kinematics(self, target_pose, n_restarts=25, error_threshold=3e-4, dedup_tol=0.4):
         """
         Explores the joint space to find multiple valid solutions.
         Returns a list of all unique solutions found.
@@ -152,7 +152,7 @@ class RobotKinematics():
             # Wrap angular error to (−π, π) to prevent discontinuities at ±π do not
             error_rot = (error_rot + np.pi) % (2 * np.pi) - np.pi
             
-            return np.sum(error_pos**2) + np.sum(error_rot**2)
+            return np.sum(error_pos**2) + 0.01*np.sum(error_rot**2)
         
         # Generate starting guesses
         rng = np.random.default_rng()
@@ -222,26 +222,3 @@ class RobotKinematics():
         return J_inv_5d, is_singular
     
 
-
-    def limit_velocities_at_bounds(self, current_q, joint_vel):
-        """
-        Zero out velocity components that would drive a joint further past its limit.
-
-        For each joint i:
-        - if current_q[i] >= high bound and joint_vel[i] > 0  → zero it (can't go higher)
-        - if current_q[i] <= low  bound and joint_vel[i] < 0  → zero it (can't go lower)
-
-        Returns (limited_vel, was_limited: bool).
-        """
-        limited_vel = np.array(joint_vel, dtype=float)
-        limited_vel_flag = False
-
-        for i, (low, high) in enumerate(self.joint_bounds):
-            if current_q[i] >= high and limited_vel[i] > 0:
-                limited_vel[i] = 0.0
-                limited_vel_flag = True
-            elif current_q[i] <= low and limited_vel[i] < 0:
-                limited_vel[i] = 0.0
-                limited_vel_flag = True
-
-        return limited_vel, limited_vel_flag

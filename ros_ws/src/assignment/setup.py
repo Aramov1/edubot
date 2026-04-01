@@ -29,7 +29,8 @@ setup(
         'console_scripts': [
             'visualize_ee_trajectory = assignment.visualize_ee_trajectory:main',
             'simple_trajectory_follower = assignment.simple_trajectory_follower:main',
-            'vel_trajectory_controller  = assignment.vel_trajectory_controller:main',
+            'vel_trajectory_controller  = assignment.vel_trajectory_controller:main_server',
+            'vel_trajectory_client      = assignment.vel_trajectory_controller:main_client',
             'set_joint_conf = assignment.set_joint_conf:main',
             'read_ee_cart = assignment.read_ee_cart:main',
             'publish_ee_pose = assignment.publish_ee_pose:main',

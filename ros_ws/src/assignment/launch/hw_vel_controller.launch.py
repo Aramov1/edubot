@@ -31,20 +31,29 @@ def generate_launch_description():
         output='screen'
     )
     
-    # Node 3: Simple Trajectory Follower
-    vel_trajectory_follower_node = Node(
+    # Node 2: Velocity Trajectory Action Server
+    vel_trajectory_server_node = Node(
         package='assignment',
-        executable='vel_trajectory_follower',
-        name='vel_trajectory_follower',
+        executable='vel_trajectory_controller',
+        name='vel_trajectory_action_server',
         output='screen'
     )
-    
+
+    # Node 3: Velocity Trajectory Action Client (generates and sends the Z trajectory)
+    vel_trajectory_client_node = Node(
+        package='assignment',
+        executable='vel_trajectory_client',
+        name='vel_trajectory_action_client',
+        output='screen'
+    )
+
     # Create the launch description
     ld = LaunchDescription()
-    
+
     # Add all actions in order
     ld.add_action(hw_velocity_launch)
     ld.add_action(publish_ee_pose_node)
-    ld.add_action(vel_trajectory_follower_node)
+    ld.add_action(vel_trajectory_server_node)
+    ld.add_action(vel_trajectory_client_node)
     
     return ld

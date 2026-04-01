@@ -30,6 +30,14 @@ def generate_launch_description():
         name='publish_ee_pose',
         output='screen'
     )
+
+     # Node 2: Visualize End-Effector Trajectory
+    visualize_ee_trajectory_node = Node(
+        package='assignment',
+        executable='visualize_ee_trajectory',
+        name='visualize_ee_trajectory',
+        output='screen'
+    )
     
     # Node 3: Simple Trajectory Follower
     simple_trajectory_follower_node = Node(
@@ -46,5 +54,6 @@ def generate_launch_description():
     ld.add_action(hw_position_launch)
     ld.add_action(publish_ee_pose_node)
     ld.add_action(simple_trajectory_follower_node)
+    ld.add_action(visualize_ee_trajectory_node)
     
     return ld
