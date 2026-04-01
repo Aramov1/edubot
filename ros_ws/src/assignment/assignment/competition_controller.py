@@ -16,14 +16,14 @@ from .robot_kinematics import RobotKinematics
 # Cartesian positions [x, y, z] in metres  — update for your hardware setup
 # ---------------------------------------------------------------------------
 
-PICK   = [0.10, 0.15, 0.05]   # Pick position
-PLACE1 = [0.20, 0.10, 0.05]   # Place position 1
-PLACE2 = [0.20, 0.15, 0.05]   # Place position 2
-PLACE3 = [0.20, 0.20, 0.05]   # Place position 3
+PICK   = [0.04, 0.16, 0.04]   # Pick position
+PLACE1 = [0.10, 0.12, 0.04]   # Place position 1
+PLACE2 = [0.10, 0.12, 0.06]   # Place position 2
+PLACE3 = [0.10, 0.12, 0.08]   # Place position 3
 
 LIFT_HEIGHT = 0.05  # metres — arc height used for all LTPB moves
 
-GRIPPER_OPEN   = 0.4
+GRIPPER_OPEN   = 0.5
 GRIPPER_CLOSED = 0.2
 
 
@@ -276,10 +276,15 @@ class CompetitionActionServer(Node):
         error_start = target_pose_0 - self.current_ee_pose[:5]
         error_start[3:] = (error_start[3:] + np.pi) % (2 * np.pi) - np.pi
 
+        # Open the gripper while the arm moves to the start position so it is
+        # ready to pick — the trajectory closes it during Phase 1 dwell (at P1)
+        # and opens it again during Phase 3 dwell (at P4).
+        init_gripper = GRIPPER_OPEN
+
         if np.linalg.norm(error_start) < self.tolerance:
             self.get_logger().info('Already at start position. Bypassing IK...')
             self._init_target_q_arm     = self.current_q_arm
-            self._init_target_q_gripper = self._gripper_arr[0]
+            self._init_target_q_gripper = init_gripper
         else:
             self.get_logger().info('Computing IK for start position...')
             ik_solutions = self.robot.inverse_kinematics(target_pose_0.tolist(), n_restarts=15)
@@ -292,7 +297,7 @@ class CompetitionActionServer(Node):
             self._init_target_q_arm = min(
                 ik_solutions,
                 key=lambda q: np.linalg.norm(np.array(q) - self.current_q_arm))
-            self._init_target_q_gripper = self._gripper_arr[0]
+            self._init_target_q_gripper = init_gripper
 
         self._tracking_errors = []
         self._tracking_times  = []
@@ -381,6 +386,10 @@ class CompetitionActionServer(Node):
         J_inv, _ = self.robot.jacobian_inverse(self.current_q_arm)
         q_dot_arm = J_inv @ (v_ff + self.K @ error)
 
+        # Clip joint velocities — near-singular configurations cause J_inv to
+        # amplify commands; without this clip, large velocities can occur
+        q_dot_arm = np.clip(q_dot_arm, -self.max_vel, self.max_vel)
+
         # Enforce joint limits
         for i in range(5):
             low, high = self.robot.joint_bounds[i]
@@ -421,8 +430,8 @@ class CompetitionActionServer(Node):
 class CompetitionActionClient(Node):
     """
     ROS 2 Action Client.
-    Derives pick/place Cartesian positions from hardware-validated joint angles
-    (via FK), generates LTPB trajectories, and sends them to the server.
+    Reads Cartesian pick/place positions from the module-level constants,
+    generates LTPB trajectories, and sends them to the server.
     """
     def __init__(self):
         super().__init__('competition_action_client')
@@ -430,20 +439,15 @@ class CompetitionActionClient(Node):
         self.action_result  = None
         self.is_action_done = False
 
-        # Derive Cartesian pick/place positions from hardware-validated joint angles
-        robot = RobotKinematics()
-        self.P_PICK   = robot.forward_kinematics(Q_PICK)[:3]
-        self.P_PLACE1 = robot.forward_kinematics(Q_PLACE1)[:3]
-        self.P_PLACE2 = robot.forward_kinematics(Q_PLACE2)[:3]
-        self.P_PLACE3 = robot.forward_kinematics(Q_PLACE3)[:3]
+        self.P_PICK   = PICK
+        self.P_PLACE1 = PLACE1
+        self.P_PLACE2 = PLACE2
+        self.P_PLACE3 = PLACE3
 
-        self.get_logger().info(
-            f'Pick position (FK):   {np.round(self.P_PICK, 4).tolist()}')
-        self.get_logger().info(
-            f'Place positions (FK): '
-            f'{np.round(self.P_PLACE1, 4).tolist()}, '
-            f'{np.round(self.P_PLACE2, 4).tolist()}, '
-            f'{np.round(self.P_PLACE3, 4).tolist()}')
+        self.get_logger().info(f'Pick:   {self.P_PICK}')
+        self.get_logger().info(f'Place1: {self.P_PLACE1}')
+        self.get_logger().info(f'Place2: {self.P_PLACE2}')
+        self.get_logger().info(f'Place3: {self.P_PLACE3}')
 
     def send_trajectory_goal(self, p_start, p_end, height, grasp=True):
         """Generate an LTPB trajectory and send it as an action goal."""
@@ -511,11 +515,11 @@ def main_client(args=None):
     rclpy.init(args=args)
     node = CompetitionActionClient()
 
-    # 3 pick-and-place cycles: pick from the same spot, stack at 3 locations
+    # 3 pick-and-place cycles: pick from the same spot, place at 3 locations
     sequence = [
-        {'name': 'PICK → PLACE1', 'start': node.P_PICK, 'end': node.P_PLACE1, 'height': 0.05, 'grasp': True},
-        {'name': 'PICK → PLACE2', 'start': node.P_PICK, 'end': node.P_PLACE2, 'height': 0.05, 'grasp': True},
-        {'name': 'PICK → PLACE3', 'start': node.P_PICK, 'end': node.P_PLACE3, 'height': 0.05, 'grasp': True},
+        {'name': 'PICK → PLACE1', 'start': node.P_PICK, 'end': node.P_PLACE1, 'height': LIFT_HEIGHT, 'grasp': True},
+        {'name': 'PICK → PLACE2', 'start': node.P_PICK, 'end': node.P_PLACE2, 'height': LIFT_HEIGHT, 'grasp': True},
+        {'name': 'PICK → PLACE3', 'start': node.P_PICK, 'end': node.P_PLACE3, 'height': LIFT_HEIGHT, 'grasp': True},
     ]
 
     for step in sequence:
