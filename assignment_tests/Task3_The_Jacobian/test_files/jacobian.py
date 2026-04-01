@@ -1,6 +1,6 @@
 import sys
 import os
-_ASSIGNMENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ASSIGNMENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, _ASSIGNMENT_DIR)
 
 import numpy as np

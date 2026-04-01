@@ -1,9 +1,9 @@
 import os
 import sys
-_ASSIGNMENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  
+_ASSIGNMENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _PROJECT_ROOT   = os.path.dirname(_ASSIGNMENT_DIR)                             
-sys.path.insert(0, _ASSIGNMENT_DIR)                                            
 sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'ros_ws', 'src', 'assignment', 'assignment'))
+sys.path.insert(0, _ASSIGNMENT_DIR)          
 
 import subprocess
 import rclpy

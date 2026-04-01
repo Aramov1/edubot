@@ -1,6 +1,6 @@
 import os
 import sys
-_ASSIGNMENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  
+_ASSIGNMENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _PROJECT_ROOT   = os.path.dirname(_ASSIGNMENT_DIR)                             
 sys.path.insert(0, _ASSIGNMENT_DIR)                                            
 sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'ros_ws', 'src', 'assignment', 'assignment'))
@@ -10,6 +10,7 @@ import subprocess
 import rclpy
 import time
 import numpy as np
+
 from set_joint_conf import SetJointConf
 from read_ee_cart import ReadEECart
 from robot_kinematics import RobotKinematics
@@ -50,10 +51,10 @@ def main():
             # Publish joint command in ROS/RViz
             setter.update_target(joints)
 
-            # # Fire the setter's 10 Hz timer so the command is published
+            # Fire the setter's 10 Hz timer so the command is published
             rclpy.spin_once(setter, timeout_sec=0.15)
 
-            # Wait foe tf pipeline to complete
+            # Wait for tf pipeline to complete
             time.sleep(0.1)
 
             # # Drain ALL pending /tf callbacks with non-blocking calls.
