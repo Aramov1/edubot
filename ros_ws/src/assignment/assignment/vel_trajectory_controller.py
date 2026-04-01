@@ -122,7 +122,7 @@ class VelTrajectoryActionServer(Node):
         # Control loop parameters
         self.control_rate_hz = 100.0
         self.dt = 1.0 / self.control_rate_hz
-        self.K = np.diag([0.01, 0.5, 2.0, 2.0, 2.0])   # CLIK feedback gain
+        self.K = np.diag([0.01, 0.5, 4, 2.0, 2.0])   # CLIK feedback gain
         self.Kp = 1.5                                    # P-control gain (init phase)
         self.max_vel = 0.5
         self.tolerance = 0.05

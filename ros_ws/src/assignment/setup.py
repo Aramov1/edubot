@@ -37,6 +37,10 @@ setup(
             'LTPB_trajectory_action_client = assignment.LTPB_trajectory_action_client:main',
             'workspace_visualizer = assignment.workspace_visualizer:main',
             'trajectory_follower_action_server = assignment.trajectory_controller_action_server:main',
+            'pick_and_place_server = assignment.pick_and_place_controller:main_server',
+            'pick_and_place_client = assignment.pick_and_place_controller:main_client',
+            'competition_server    = assignment.competition_controller:main_server',
+            'competition_client    = assignment.competition_controller:main_client',
         ],
     },
 )
